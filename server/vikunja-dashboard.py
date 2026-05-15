@@ -717,6 +717,33 @@ tags: [早报]
 
     # Update vault index
     update_vault_index(today)
+    dedup_flashcards()
+
+
+def dedup_flashcards():
+    """Remove duplicate flashcards (similarity > 75%)"""
+    from difflib import SequenceMatcher
+    fp = '/root/.flashcards-server.json'
+    try:
+        fc = json.load(open(fp))
+    except:
+        return
+    to_remove = set()
+    for i in range(len(fc)):
+        if i in to_remove:
+            continue
+        for j in range(i + 1, len(fc)):
+            if j in to_remove:
+                continue
+            if fc[i].get('s') == fc[j].get('s'):
+                r = SequenceMatcher(None, fc[i].get('q', ''), fc[j].get('q', '')).ratio()
+                if r > 0.75:
+                    to_remove.add(i)
+    if to_remove:
+        fc = [c for i, c in enumerate(fc) if i not in to_remove]
+        with open(fp, 'w') as f:
+            json.dump(fc, f, ensure_ascii=False, indent=2)
+        log(f'Flashcard dedup: removed {len(to_remove)}')
 
 
 def update_vault_index(today):
@@ -3076,6 +3103,486 @@ def check_achievements(now, today):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
+# ========== Flashcard Factory (overnight batch) ==========
+
+def flashcard_factory(now, today):
+    """Generate flashcards from course notes that haven't been processed yet"""
+    import time as _time
+    DONE_FILE = '/root/.fc-factory-done.json'
+    FC_FILE = '/root/.flashcards-server.json'
+    FC_SHORT = {'高数II':'高数','有机化学':'有机','概率统计':'概统','大学物理':'大物',
+                '分析化学':'分析化学','普通生物学':'普生','AI基础':'AI基础','习思想':'习思想'}
+
+    try:
+        with open(DONE_FILE, 'r') as f:
+            done = set(json.load(f))
+    except:
+        done = set()
+
+    # Find unprocessed course note files
+    candidates = []
+    for root, dirs, files in os.walk(COURSE_DIR):
+        dirs[:] = [d for d in dirs if d != '闪卡']
+        for fname in files:
+            if not fname.endswith('.md') or fname == '期末冲刺精华.md':
+                continue
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, VAULT_DIR)
+            if rel not in done:
+                subj = os.path.basename(os.path.dirname(fpath))
+                candidates.append((fpath, rel, subj))
+
+    if not candidates:
+        log('Flashcard factory: all files processed')
+        return
+
+    # Process up to 3 files per run
+    try:
+        existing = json.load(open(FC_FILE))
+    except:
+        existing = []
+
+    processed = 0
+    for fpath, rel, subj in candidates[:3]:
+        try:
+            with open(fpath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            if len(content) < 100:
+                done.add(rel)
+                continue
+
+            fc_subj = FC_SHORT.get(subj, subj)
+            prompt = f"""从以下课程笔记中提取5-8个重要知识点，生成闪卡。
+返回JSON数组：[{{"q":"问题","a":"答案","difficulty":"easy|medium|hard"}}]
+数学公式用 $...$ 格式。只返回JSON。
+
+{content[:4000]}"""
+
+            payload = json.dumps({
+                'model': AI_MODEL,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 1500, 'temperature': 0.3
+            }).encode('utf-8')
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+            })
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+            raw = result['choices'][0]['message']['content'].strip()
+            if raw.startswith('```'): raw = '\n'.join(raw.split('\n')[1:])
+            if raw.endswith('```'): raw = '\n'.join(raw.split('\n')[:-1])
+
+            import re as _re
+            try:
+                cards = json.loads(raw)
+            except:
+                m = _re.search(r'\[[\s\S]*\]', raw)
+                cards = json.loads(m.group(0)) if m else []
+
+            if isinstance(cards, list) and cards:
+                ts = int(datetime.datetime.now().timestamp() * 1000)
+                for i, c in enumerate(cards):
+                    existing.append({
+                        'id': f'{ts}_{i}', 's': fc_subj,
+                        'q': c.get('q', ''), 'a': c.get('a', ''),
+                        'difficulty': c.get('difficulty', 'medium'),
+                        'source': rel, 'created': now.isoformat(), 'synced': False
+                    })
+                log(f'Factory: {len(cards)} cards from {rel}')
+                processed += 1
+
+            done.add(rel)
+            _time.sleep(3)  # Rate limit
+
+        except Exception as e:
+            log(f'Factory error ({rel}): {e}')
+            done.add(rel)
+
+    with open(FC_FILE, 'w') as f:
+        json.dump(existing, f, ensure_ascii=False, indent=2)
+    with open(DONE_FILE, 'w') as f:
+        json.dump(list(done), f)
+    if processed:
+        log(f'Flashcard factory: processed {processed} files')
+
+
+# ========== Memos Confusion Auto-Explain ==========
+
+CONFUSION_WORDS = ['没搞懂', '不理解', '不会', '搞不清', '分不清', '记不住', '好难', '怎么算',
+                   '不懂', '看不懂', '想不通', '弄不明白', '太难了', '不知道怎么', '咋算']
+
+def memos_confusion_detect(now, today):
+    """Detect confusion in Memos and auto-explain"""
+    processed_file = '/root/.confusion-processed.json'
+    try:
+        with open(processed_file, 'r') as f:
+            processed = set(json.load(f))
+    except:
+        processed = set()
+
+    try:
+        req = urllib.request.Request(
+            f'{MEMOS_API}/memos?pageSize=20',
+            headers={'Authorization': f'Bearer {MEMOS_TOKEN}'}
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except:
+        return
+
+    for m in data.get('memos', []):
+        memo_id = m.get('name', '')
+        content = m.get('content', '').strip()
+        if memo_id in processed or '🤖' in content or '✅' in content or '📖' in content:
+            continue
+        # Skip tagged memos (already handled by other systems)
+        if any(tag in content for tag in ['#学了', '#看课', '#出题', '#问', '#查', '#每日挑战']):
+            continue
+
+        # Check for confusion signals
+        has_confusion = any(w in content for w in CONFUSION_WORDS)
+        if not has_confusion:
+            processed.add(memo_id)
+            continue
+
+        # Extract what they're confused about
+        confusion_text = content.replace('\n', ' ').strip()
+        if len(confusion_text) < 5:
+            processed.add(memo_id)
+            continue
+
+        log(f'Confusion detected: {confusion_text[:40]}')
+
+        prompt = f"""学生说："{confusion_text}"
+
+请用3-5句话简洁地解释这个知识点，帮助学生理解。
+- 用最简单的语言
+- 如果涉及公式，用 $...$ 格式
+- 给一个记忆口诀（如果适合）"""
+
+        payload = json.dumps({
+            'model': AI_MODEL,
+            'messages': [{'role': 'user', 'content': prompt}],
+            'max_tokens': 300, 'temperature': 0.5
+        }).encode('utf-8')
+
+        try:
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+            })
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+            answer = result['choices'][0]['message']['content'].strip()
+            if answer.startswith('```'): answer = '\n'.join(answer.split('\n')[1:])
+            if answer.endswith('```'): answer = '\n'.join(answer.split('\n')[:-1])
+
+            new_content = content + f'\n\n---\n🤖 **AI 小解释**\n\n{answer}'
+            update_payload = json.dumps({'content': new_content}).encode('utf-8')
+            update_req = urllib.request.Request(
+                f'{MEMOS_API}/{memo_id}',
+                data=update_payload, method='PATCH',
+                headers={'Authorization': f'Bearer {MEMOS_TOKEN}', 'Content-Type': 'application/json'}
+            )
+            with urllib.request.urlopen(update_req, timeout=10) as resp:
+                resp.read()
+            log(f'Confusion explained: {confusion_text[:30]}')
+        except Exception as e:
+            log(f'Confusion explain failed: {e}')
+
+        processed.add(memo_id)
+
+    with open(processed_file, 'w') as f:
+        json.dump(list(processed)[-500:], f)
+
+
+# ========== Daily Micro-Lesson ==========
+
+def micro_lesson(now, today):
+    """Generate and push a short micro-lesson on a weak topic"""
+    # Pick a topic from weaknesses or spaced repetition
+    topic = None
+    try:
+        wk = load_weaknesses()
+        active = [w for w in wk if w.get('status', 'active') == 'active']
+        if active:
+            topic = active[0].get('text', '')
+    except:
+        pass
+
+    if not topic:
+        try:
+            sp = json.load(open(SPACED_FILE))
+            due = [it for it in sp if it.get('status') == 'active']
+            if due:
+                topic = due[0].get('text', '')
+        except:
+            pass
+
+    if not topic:
+        # Pick from recent AI notes
+        try:
+            for root, dirs, files in os.walk(AI_DIR):
+                for fname in sorted(files, reverse=True):
+                    if fname.endswith('.md'):
+                        with open(os.path.join(root, fname), 'r', encoding='utf-8') as f:
+                            fc = f.read(500)
+                        sm = fc.split('---')
+                        if len(sm) >= 3:
+                            for line in sm[1].split('\n'):
+                                if line.strip().startswith('summary:'):
+                                    topic = line.split(':', 1)[1].strip().strip('"\'')
+                                    break
+                        if topic:
+                            break
+                if topic:
+                    break
+        except:
+            pass
+
+    if not topic:
+        log('Micro-lesson: no topic found')
+        return
+
+    prompt = f"""请用100字以内，用最简洁易懂的方式讲解这个知识点：
+
+{topic}
+
+要求：
+- 一段话讲清楚核心概念
+- 如果有公式用纯文本（Bark不支持LaTeX）
+- 如果适合，给一个记忆口诀
+- 不要客套，直接讲"""
+
+    payload = json.dumps({
+        'model': AI_MODEL,
+        'messages': [{'role': 'user', 'content': prompt}],
+        'max_tokens': 200, 'temperature': 0.5
+    }).encode('utf-8')
+
+    try:
+        req = urllib.request.Request(AI_API_URL, data=payload, headers={
+            'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+        })
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+        lesson = result['choices'][0]['message']['content'].strip()
+
+        bark_push('🎓 今日微课', lesson[:200], sound='silence', group='lesson')
+
+        # Also save to Memos
+        memo_content = f'🎓 今日微课\n\n**{topic[:30]}**\n\n{lesson}'
+        memo_payload = json.dumps({'content': memo_content, 'visibility': 'PRIVATE'}).encode('utf-8')
+        memo_req = urllib.request.Request(
+            f'{MEMOS_API}/memos', data=memo_payload, method='POST',
+            headers={'Authorization': f'Bearer {MEMOS_TOKEN}', 'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(memo_req, timeout=10) as resp:
+            resp.read()
+
+        log(f'Micro-lesson pushed: {topic[:30]}')
+    except Exception as e:
+        log(f'Micro-lesson failed: {e}')
+
+
+# ========== Note Quality Check ==========
+
+def note_quality_check(now, today):
+    """Auto-fix common formatting issues in vault notes"""
+    import re as _re
+
+    UNICODE_MATH = {'∫':'\\int ','∮':'\\oint ','∑':'\\sum ','√':'\\sqrt','∂':'\\partial ',
+                    '≤':'\\le ','≥':'\\ge ','≠':'\\ne ','±':'\\pm ','∈':'\\in ',
+                    '∞':'\\infty','α':'\\alpha','β':'\\beta','θ':'\\theta','π':'\\pi',
+                    'φ':'\\varphi','σ':'\\sigma','μ':'\\mu','λ':'\\lambda'}
+    SUB = {'₀':'_0','₁':'_1','₂':'_2','₃':'_3','₄':'_4','₅':'_5','₆':'_6','₇':'_7','₈':'_8','₉':'_9','ₙ':'_n'}
+    SUP = {'²':'^2','³':'^3','ⁿ':'^n'}
+
+    fixed_count = 0
+    for root, dirs, files in os.walk(COURSE_DIR):
+        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        for fname in files:
+            if not fname.endswith('.md'):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except:
+                continue
+
+            original = content
+            # Fix Unicode math symbols
+            for old, new in {**UNICODE_MATH, **SUB, **SUP}.items():
+                content = content.replace(old, new)
+
+            if content != original:
+                with open(fpath, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                fixed_count += 1
+
+    if fixed_count:
+        subprocess.run(['chown', '-R', 'www-data:www-data', COURSE_DIR], capture_output=True)
+        log(f'Note quality: fixed {fixed_count} files')
+
+
+# ========== Auto Cross-Link Notes ==========
+
+def auto_crosslink(now, today):
+    """Scan AI notes and add links to related course notes (keyword-based, no AI)"""
+    import re as _re
+
+    # Build keyword → course note mapping
+    course_keywords = {}  # keyword → [[link]]
+    for root, dirs, files in os.walk(COURSE_DIR):
+        dirs[:] = [d for d in dirs if d != '闪卡']
+        for fname in files:
+            if not fname.endswith('.md'):
+                continue
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, VAULT_DIR).replace('\\', '/').replace('.md', '')
+            name = fname.replace('.md', '')
+            # Extract keywords from filename
+            for kw in _re.split(r'[_\s\-·]', name):
+                if len(kw) >= 2:
+                    course_keywords.setdefault(kw, set()).add(rel)
+
+    linked = 0
+    for root, dirs, files in os.walk(AI_DIR):
+        for fname in files:
+            if not fname.endswith('.md'):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except:
+                continue
+
+            # Skip if already has auto-links
+            if '<!-- auto-links -->' in content:
+                continue
+
+            # Find matching course notes
+            matches = set()
+            for kw, links in course_keywords.items():
+                if kw in content:
+                    matches.update(links)
+
+            # Remove self-references
+            self_rel = os.path.relpath(fpath, VAULT_DIR).replace('\\', '/').replace('.md', '')
+            matches.discard(self_rel)
+
+            if matches and len(matches) <= 10:
+                links_md = '\n<!-- auto-links -->\n\n---\n**相关笔记**: '
+                links_md += ' · '.join(f'[[{m}]]' for m in sorted(matches)[:6])
+                links_md += '\n'
+                with open(fpath, 'a', encoding='utf-8') as f:
+                    f.write(links_md)
+                linked += 1
+
+    if linked:
+        subprocess.run(['chown', '-R', 'www-data:www-data', AI_DIR], capture_output=True)
+        log(f'Auto-crosslink: linked {linked} notes')
+
+
+# ========== Daily Data Snapshot ==========
+
+def daily_snapshot(now, today):
+    """Take a daily snapshot of all study data for trend tracking"""
+    SNAPSHOT_FILE = '/root/.daily-snapshots.json'
+    today_str = today.isoformat()
+    days_left = (EXAM_DATE - today).days
+
+    try:
+        with open(SNAPSHOT_FILE, 'r') as f:
+            snapshots = json.load(f)
+    except:
+        snapshots = []
+
+    # Skip if already snapped today
+    if any(s.get('date') == today_str for s in snapshots):
+        log('Snapshot: already exists for today')
+        return
+
+    # Collect data
+    snap = {'date': today_str, 'days_left': days_left}
+
+    # Flashcards
+    try:
+        fc = json.load(open('/root/.flashcards-server.json'))
+        snap['flashcards_total'] = len(fc)
+        by_subj = {}
+        for c in fc:
+            by_subj[c.get('s', '?')] = by_subj.get(c.get('s', '?'), 0) + 1
+        snap['flashcards_by_subject'] = by_subj
+    except:
+        snap['flashcards_total'] = 0
+
+    # Problems
+    try:
+        probs = json.load(open(PROBLEMS_FILE))
+        snap['problems_total'] = len(probs)
+        snap['problems_mastered'] = len([p for p in probs if p.get('mastery', 0) >= 80])
+    except:
+        snap['problems_total'] = 0
+
+    # Study log
+    try:
+        logs = load_study_log()
+        today_logs = [e for e in logs if e.get('date') == today_str]
+        snap['study_minutes_today'] = sum(e.get('duration', 0) for e in today_logs)
+        all_time = sum(e.get('duration', 0) for e in logs)
+        snap['study_minutes_total'] = all_time
+    except:
+        snap['study_minutes_today'] = 0
+
+    # Video progress
+    try:
+        vdata = load_video_courses()
+        total_watched = 0
+        for subj, course in vdata.get('courses', {}).items():
+            total_watched += sum(1 for e in course.get('episodes', {}).values() if e.get('completed'))
+        snap['video_episodes_completed'] = total_watched
+    except:
+        snap['video_episodes_completed'] = 0
+
+    # Spaced repetition
+    try:
+        sp = json.load(open(SPACED_FILE))
+        snap['spaced_active'] = len([i for i in sp if i.get('status') == 'active'])
+    except:
+        snap['spaced_active'] = 0
+
+    # Vikunja tasks
+    try:
+        total_done = 0
+        total_undone = 0
+        for pid in PROJECTS:
+            tasks = vikunja_get(f'/projects/{pid}/tasks')
+            if isinstance(tasks, list):
+                total_done += len([t for t in tasks if t.get('done')])
+                total_undone += len([t for t in tasks if not t.get('done')])
+        snap['tasks_done'] = total_done
+        snap['tasks_undone'] = total_undone
+    except:
+        pass
+
+    # Notes count
+    try:
+        notes = sum(1 for r, ds, fs in os.walk(VAULT_DIR) for f in fs if f.endswith('.md'))
+        snap['notes_total'] = notes
+    except:
+        pass
+
+    snapshots.append(snap)
+    # Keep last 60 days
+    snapshots = snapshots[-60:]
+
+    with open(SNAPSHOT_FILE, 'w') as f:
+        json.dump(snapshots, f, ensure_ascii=False, indent=2)
+    log(f'Daily snapshot: fc={snap.get("flashcards_total")}, probs={snap.get("problems_total")}, study={snap.get("study_minutes_today")}min')
+
+
 # ========== Compile Exam Essentials ==========
 
 def compile_subject(now, today, subject):
@@ -3468,6 +3975,7 @@ def main():
         memos_video_watch(now, today)
         memos_archive(now, today)
         canvas_monitor(now, today)
+        memos_confusion_detect(now, today)
         fatigue_check(now, today)
         check_achievements(now, today)
     elif mode == 'bedtime':
@@ -3480,6 +3988,15 @@ def main():
         proactive_review_evaluate(now, today)
     elif mode == 'timeslot':
         smart_timeslot(now, today)
+    elif mode == 'crosslink':
+        auto_crosslink(now, today)
+        note_quality_check(now, today)
+    elif mode == 'factory':
+        flashcard_factory(now, today)
+    elif mode == 'micro':
+        micro_lesson(now, today)
+    elif mode == 'snapshot':
+        daily_snapshot(now, today)
     else:
         log(f'Unknown mode: {mode}')
         sys.exit(1)

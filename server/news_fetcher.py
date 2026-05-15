@@ -304,6 +304,8 @@ def fetch_weather():
     """Fetch Shanghai weather from wttr.in"""
     try:
         r = requests.get('https://wttr.in/Shanghai?format=j1', headers={'User-Agent': 'curl/7.0'}, timeout=10)
+        if not r.text or r.text.strip() == '':
+            raise ValueError('Empty weather response')
         data = r.json()
         curr = data['current_condition'][0]
         desc = curr['weatherDesc'][0]['value']

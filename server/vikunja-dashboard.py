@@ -2428,6 +2428,146 @@ tags: [AI题库, {subj}]
     log(f'Batch extraction done: {total_extracted} problems from {len(existing_sources)} notes')
 
 
+# ========== Fatigue Detection ==========
+
+FATIGUE_KEYWORDS = ['好累', '累了', '学不动', '崩了', '不想学', '太难了', '放弃', '焦虑', '烦', '头疼', '困死', '摆烂', '不行了', '学吐了']
+ENCOURAGE_MSGS = [
+    '休息一下吧！出去走10分钟，回来效率更高',
+    '你已经很努力了，适当休息不是偷懒',
+    '喝杯水，做几个深呼吸，然后继续',
+    '记住：坚持到考前就是胜利，不需要完美',
+    '累了就换个轻松的科目，比如翻翻闪卡',
+    '距期末还有时间，不要给自己太大压力',
+    '你能意识到疲劳就很好了，休息15分钟再继续',
+]
+
+def fatigue_check(now, today):
+    """Detect study fatigue from Memos and study log, push encouragement"""
+    import random
+
+    # 1. Check Memos for fatigue keywords
+    try:
+        req = urllib.request.Request(
+            f'{MEMOS_API}/memos?pageSize=10',
+            headers={'Authorization': f'Bearer {MEMOS_TOKEN}'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+
+        today_str = today.isoformat()
+        for m in data.get('memos', []):
+            ct = m.get('createTime', '')
+            if not ct.startswith(today_str):
+                continue
+            content = m.get('content', '')
+            for kw in FATIGUE_KEYWORDS:
+                if kw in content:
+                    bark_push('💪 休息一下', random.choice(ENCOURAGE_MSGS), sound='silence', group='care')
+                    log(f'Fatigue detected: "{kw}" in memo')
+                    return
+    except:
+        pass
+
+    # 2. Check continuous study time (from study log)
+    try:
+        logs = load_study_log()
+        today_logs = [e for e in logs if e.get('date') == today.isoformat()]
+        if len(today_logs) >= 4:
+            # 4+ study sessions today
+            total = sum(e.get('duration', 0) for e in today_logs)
+            if total >= 240:  # 4+ hours
+                bark_push('💪 学了够久了', f'今天已学{total}分钟，适当休息效率更高', sound='silence', group='care')
+                log(f'Long study detected: {total}min today')
+    except:
+        pass
+
+
+# ========== Achievement System ==========
+
+ACHIEVEMENT_FILE = '/root/.achievements.json'
+
+def check_achievements(now, today):
+    """Check and push achievement notifications"""
+    today_str = today.isoformat()
+
+    try:
+        with open(ACHIEVEMENT_FILE, 'r') as f:
+            state = json.load(f)
+    except:
+        state = {'unlocked': [], 'last_check': ''}
+
+    if state.get('last_check') == today_str:
+        return  # Already checked today
+
+    new_achievements = []
+
+    # 1. Study streak (consecutive days with study log)
+    try:
+        logs = load_study_log()
+        streak = 0
+        for delta in range(0, 30):
+            day = (today - datetime.timedelta(days=delta)).isoformat()
+            if any(e.get('date') == day for e in logs):
+                streak += 1
+            else:
+                break
+
+        milestones = {3: '🔥 连续学习3天', 7: '🏆 一周不间断', 14: '⭐ 两周坚持', 21: '👑 三周铁人'}
+        for days, name in milestones.items():
+            if streak >= days and name not in state['unlocked']:
+                new_achievements.append(name)
+                state['unlocked'].append(name)
+    except:
+        pass
+
+    # 2. Problem mastery milestones
+    try:
+        with open(PROBLEMS_FILE, 'r') as f:
+            problems = json.load(f)
+        mastered = len([p for p in problems if p.get('mastery', 0) >= 80])
+        milestones = {5: '📚 掌握5道题', 10: '📚 掌握10道题', 20: '📚 掌握20道题', 30: '📚 题库大师'}
+        for count, name in milestones.items():
+            if mastered >= count and name not in state['unlocked']:
+                new_achievements.append(name)
+                state['unlocked'].append(name)
+    except:
+        pass
+
+    # 3. Flashcard milestones
+    try:
+        with open('/root/.flashcards-server.json', 'r') as f:
+            cards = json.load(f)
+        milestones = {50: '🃏 50张闪卡', 100: '🃏 百卡成就', 150: '🃏 闪卡达人'}
+        for count, name in milestones.items():
+            if len(cards) >= count and name not in state['unlocked']:
+                new_achievements.append(name)
+                state['unlocked'].append(name)
+    except:
+        pass
+
+    # 4. Total study time milestones
+    try:
+        logs = load_study_log()
+        total_min = sum(e.get('duration', 0) for e in logs)
+        milestones = {300: '⏱️ 累计5小时', 600: '⏱️ 累计10小时', 1200: '⏱️ 累计20小时', 3000: '⏱️ 累计50小时'}
+        for mins, name in milestones.items():
+            if total_min >= mins and name not in state['unlocked']:
+                new_achievements.append(name)
+                state['unlocked'].append(name)
+    except:
+        pass
+
+    # Push new achievements
+    if new_achievements:
+        msg = '\n'.join(new_achievements)
+        bark_push('🎉 成就解锁！', msg, sound='fanfare', group='achievement')
+        log(f'Achievements unlocked: {new_achievements}')
+
+    state['last_check'] = today_str
+    with open(ACHIEVEMENT_FILE, 'w') as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
 # ========== Compile Exam Essentials ==========
 
 def compile_subject(now, today, subject):
@@ -2801,6 +2941,8 @@ def main():
         memos_qa(now, today)
         memos_study_log(now, today)
         memos_lookup(now, today)
+        fatigue_check(now, today)
+        check_achievements(now, today)
     elif mode == 'bedtime':
         bedtime_review(now, today)
     elif mode == 'spaced':

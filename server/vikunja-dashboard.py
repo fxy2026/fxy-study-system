@@ -2910,6 +2910,12 @@ def canvas_monitor(now, today):
         msg = '\n'.join(new_items[:5])
         bark_push('📢 Canvas 更新', msg, sound='bell', group='canvas')
         log(f'Canvas monitor: {len(new_items)} new items')
+        # Pre-process new assignments
+        for item in new_items:
+            if '新作业' in item:
+                parts = item.replace('📚 新作业: ', '').split(' - ', 1)
+                if len(parts) == 2:
+                    assignment_preprocess(parts[1], parts[0])
 
 
 # ========== Memos → Vault Archive ==========
@@ -3594,6 +3600,454 @@ def daily_snapshot(now, today):
     with open(SNAPSHOT_FILE, 'w') as f:
         json.dump(snapshots, f, ensure_ascii=False, indent=2)
     log(f'Daily snapshot: fc={snap.get("flashcards_total")}, probs={snap.get("problems_total")}, study={snap.get("study_minutes_today")}min')
+
+
+# ========== Canvas Grades Tracker ==========
+
+def canvas_grades_track(now, today):
+    """Pull Canvas grades, calculate real GPA, push on new scores"""
+    import ssl
+    CANVAS_API = 'https://oc.sjtu.edu.cn/api/v1'
+    CANVAS_TOKEN = 'YOUR_CANVAS_TOKEN'
+    GRADES_FILE = '/root/.canvas-grades.json'
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with open(GRADES_FILE, 'r') as f:
+            prev = json.load(f)
+    except:
+        prev = {'courses': {}, 'seen_scores': []}
+
+    # Get user's courses
+    try:
+        req = urllib.request.Request(
+            CANVAS_API + '/courses?enrollment_state=active&per_page=20',
+            headers={'Authorization': f'Bearer {CANVAS_TOKEN}'}
+        )
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+            courses = json.loads(resp.read().decode('utf-8'))
+    except:
+        return
+
+    new_scores = []
+    for course in courses:
+        cid = course.get('id')
+        cname = course.get('name', '')[:30]
+        if not cid:
+            continue
+
+        # Get enrollments (contains computed grades)
+        try:
+            req = urllib.request.Request(
+                CANVAS_API + f'/courses/{cid}/enrollments?user_id=self',
+                headers={'Authorization': f'Bearer {CANVAS_TOKEN}'}
+            )
+            with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+                enrollments = json.loads(resp.read().decode('utf-8'))
+
+            for en in enrollments:
+                grades = en.get('grades', {})
+                current_score = grades.get('current_score')
+                if current_score is not None:
+                    prev_score = prev['courses'].get(str(cid), {}).get('score')
+                    prev['courses'][str(cid)] = {
+                        'name': cname,
+                        'score': current_score,
+                        'grade': grades.get('current_grade', ''),
+                        'updated': today.isoformat()
+                    }
+                    if prev_score is not None and current_score != prev_score:
+                        diff = current_score - prev_score
+                        arrow = '📈' if diff > 0 else '📉'
+                        new_scores.append(f'{arrow} {cname}: {current_score}分 ({"+%.1f" % diff if diff > 0 else "%.1f" % diff})')
+        except:
+            pass
+
+    with open(GRADES_FILE, 'w') as f:
+        json.dump(prev, f, ensure_ascii=False, indent=2)
+
+    if new_scores:
+        bark_push('📊 Canvas 成绩更新', '\n'.join(new_scores), sound='bell', group='canvas')
+        log(f'Grades: {len(new_scores)} updates')
+
+
+# ========== Weekly Strategy Report ==========
+
+def weekly_strategy(now, today):
+    """AI generates next week's specific study strategy based on all data"""
+    days_left = (EXAM_DATE - today).days
+    readiness = calculate_readiness(today)
+
+    # Gather this week's data
+    week_start = today - datetime.timedelta(days=today.weekday())
+    study_this_week = {}
+    try:
+        logs = load_study_log()
+        for e in logs:
+            d = e.get('date', '')
+            if d >= week_start.isoformat():
+                subj = e.get('subject', '?')
+                study_this_week[subj] = study_this_week.get(subj, 0) + e.get('duration', 0)
+    except:
+        pass
+
+    # Build context for AI
+    context = f"""距期末{days_left}天。
+
+本周学习时长：
+{chr(10).join(f'- {s}: {m}分钟' for s, m in study_this_week.items()) if study_this_week else '- 无记录'}
+
+各科就绪度（0-100）：
+{chr(10).join(f'- {s}: {r["score"]}分 (覆盖{r["coverage"]} 闪卡{r["flashcards"]} 题目{r["problems"]} 时长{r["study_time"]} 弱点{r["weakness"]})' for s, r in readiness.items())}
+
+待办任务：{sum(1 for t in fetch_all_tasks() if not t.get('done'))}项
+
+请为下周（周一到周日）制定每日具体复习计划。要求：
+1. 每天 2-3 个任务，每个指明科目+章节+具体动作+时长
+2. 优先提升最弱科目（就绪度最低的）
+3. 考虑学分权重（4学分科目比2学分重要）
+4. 周末可以多安排
+
+输出格式：
+## 周一
+- [ ] 科目：具体任务（时长）
+- [ ] 科目：具体任务（时长）
+
+## 周二
+...
+
+只输出计划，不要解释。"""
+
+    payload = json.dumps({
+        'model': AI_MODEL,
+        'messages': [{'role': 'user', 'content': context}],
+        'max_tokens': 2000, 'temperature': 0.4
+    }).encode('utf-8')
+
+    try:
+        req = urllib.request.Request(AI_API_URL, data=payload, headers={
+            'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+        })
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+        strategy = result['choices'][0]['message']['content'].strip()
+        if strategy.startswith('```'): strategy = '\n'.join(strategy.split('\n')[1:])
+        if strategy.endswith('```'): strategy = '\n'.join(strategy.split('\n')[:-1])
+    except Exception as e:
+        log(f'Weekly strategy failed: {e}')
+        return
+
+    # Save to vault
+    readiness_table = '\n'.join(f'| {s} | {r["score"]} |' for s, r in sorted(readiness.items(), key=lambda x: x[1]['score']))
+    md = f"""---
+created: {today}
+tags: [周策略]
+---
+
+# 📋 下周复习策略
+
+> 📅 {today} | 距期末 **{days_left}** 天
+
+## 当前就绪度
+| 科目 | 分数 |
+|------|------|
+{readiness_table}
+
+{strategy}
+"""
+    write_report(today, '周策略', md)
+
+    # Auto-create Vikunja tasks from the plan
+    import re as _re
+    tomorrow = today + datetime.timedelta(days=1)
+    existing_norms, _ = load_existing_titles()
+    created = 0
+    day_offset = 0
+    for line in strategy.split('\n'):
+        if _re.match(r'^## 周[一二三四五六日]', line):
+            day_map = {'一':0,'二':1,'三':2,'四':3,'五':4,'六':5,'日':6}
+            for ch, d in day_map.items():
+                if ch in line:
+                    day_offset = (d - today.weekday() + 7) % 7
+                    if day_offset == 0: day_offset = 7
+                    break
+        if _re.match(r'^- \[ \]', line.strip()):
+            task_text = _re.sub(r'^- \[ \]\s*', '', line.strip())
+            task_text = task_text.replace('**', '').strip()
+            if task_text and not is_task_duplicate(task_text, existing_norms):
+                due = today + datetime.timedelta(days=day_offset)
+                vikunja_create_task(task_text[:40], project_id=2, due_date=due)
+                existing_norms.add(normalize_title(task_text))
+                created += 1
+
+    bark_push('📋 下周策略已生成', f'{created}个任务已创建', group='weekly')
+    log(f'Weekly strategy: {created} tasks created')
+
+
+# ========== Auto Mind Maps ==========
+
+def generate_mindmaps(now, today):
+    """Generate Mermaid mind maps for each chapter"""
+    import time as _time
+    MINDMAP_DONE = '/root/.mindmap-done.json'
+    try:
+        with open(MINDMAP_DONE, 'r') as f:
+            done = set(json.load(f))
+    except:
+        done = set()
+
+    generated = 0
+    for root, dirs, files in os.walk(COURSE_DIR):
+        dirs[:] = [d for d in dirs if d != '闪卡']
+        subj = os.path.basename(root)
+        for fname in files:
+            if not fname.endswith('.md') or fname.startswith('思维导图') or fname in ('期末冲刺精华.md', '网课笔记.md', '记忆口诀.md', '跨科目知识关联.md'):
+                continue
+            rel = os.path.relpath(os.path.join(root, fname), VAULT_DIR)
+            if rel in done:
+                continue
+
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                if len(content) < 200:
+                    done.add(rel)
+                    continue
+
+                ch_name = fname.replace('.md', '')
+                prompt = f"""根据以下{subj}的课程笔记，生成一个 Mermaid 思维导图。
+
+{content[:3000]}
+
+要求：
+- 使用 graph TD（从上到下）格式
+- 根节点是章节名
+- 展开 3-4 层核心概念
+- 每个节点简短（5字以内）
+- 关键公式节点用 (( )) 圆角
+
+只输出 mermaid 代码块，不要其他内容。"""
+
+                payload = json.dumps({
+                    'model': AI_MODEL,
+                    'messages': [{'role': 'user', 'content': prompt}],
+                    'max_tokens': 800, 'temperature': 0.3
+                }).encode('utf-8')
+                req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                    'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+                })
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    result = json.loads(resp.read().decode('utf-8'))
+                mermaid = result['choices'][0]['message']['content'].strip()
+
+                # Clean markdown fences
+                if '```mermaid' in mermaid:
+                    mermaid = mermaid.split('```mermaid')[1].split('```')[0].strip()
+                elif '```' in mermaid:
+                    mermaid = mermaid.split('```')[1].split('```')[0].strip()
+
+                md = f"""---
+tags: [思维导图, {subj}]
+---
+
+# {ch_name} 思维导图
+
+```mermaid
+{mermaid}
+```
+
+> 来源: [[{rel.replace('.md', '')}]]
+"""
+                safe_name = ch_name.replace('/', '_')
+                out_path = os.path.join(root, f'思维导图_{safe_name}.md')
+                with open(out_path, 'w', encoding='utf-8') as f:
+                    f.write(md)
+                generated += 1
+                log(f'Mindmap: {subj}/{ch_name}')
+                done.add(rel)
+            except Exception as e:
+                log(f'Mindmap error: {e}')
+                done.add(rel)
+            _time.sleep(2)
+            if generated >= 5:  # Max 5 per run
+                break
+        if generated >= 5:
+            break
+
+    with open(MINDMAP_DONE, 'w') as f:
+        json.dump(list(done), f)
+    if generated:
+        subprocess.run(['chown', '-R', 'www-data:www-data', COURSE_DIR], capture_output=True)
+        log(f'Mindmaps: generated {generated}')
+
+
+# ========== Assignment Smart Pre-processing ==========
+
+def assignment_preprocess(assignment_name, course_name):
+    """When a new Canvas assignment is detected, AI analyzes what's needed"""
+    prompt = f"""Canvas 上发布了一个新作业：
+课程：{course_name}
+作业名：{assignment_name}
+
+请分析：
+1. 这个作业可能需要哪些知识点（2-3个）
+2. 建议的完成步骤（3步）
+3. 预估需要多少时间
+
+简洁输出，每项一行。"""
+
+    payload = json.dumps({
+        'model': AI_MODEL,
+        'messages': [{'role': 'user', 'content': prompt}],
+        'max_tokens': 200, 'temperature': 0.4
+    }).encode('utf-8')
+
+    try:
+        req = urllib.request.Request(AI_API_URL, data=payload, headers={
+            'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+        })
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+        analysis = result['choices'][0]['message']['content'].strip()
+
+        # Push to Bark
+        bark_push(f'📝 作业分析: {assignment_name[:20]}', analysis[:150], group='canvas')
+
+        # Create Memos
+        memo_content = f'📝 **作业预分析**: {course_name} - {assignment_name}\n\n{analysis}'
+        memo_payload = json.dumps({'content': memo_content, 'visibility': 'PRIVATE'}).encode('utf-8')
+        memo_req = urllib.request.Request(
+            f'{MEMOS_API}/memos', data=memo_payload, method='POST',
+            headers={'Authorization': f'Bearer {MEMOS_TOKEN}', 'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(memo_req, timeout=10) as resp:
+            resp.read()
+
+        log(f'Assignment preprocessed: {assignment_name[:30]}')
+    except Exception as e:
+        log(f'Assignment preprocess error: {e}')
+
+
+# ========== Learning Efficiency Analyzer ==========
+
+def learning_efficiency_analysis(now, today):
+    """Cross-analyze all learning data to find inefficiencies and actionable insights"""
+    today_str = today.isoformat()
+    days_left = (EXAM_DATE - today).days
+
+    # Gather all data
+    insights = []
+
+    # 1. Study time vs readiness: which subjects have low ROI?
+    readiness = calculate_readiness(today)
+    try:
+        logs = load_study_log()
+        by_subj_time = {}
+        for e in logs:
+            by_subj_time[e.get('subject', '?')] = by_subj_time.get(e.get('subject', '?'), 0) + e.get('duration', 0)
+
+        for subj, r in readiness.items():
+            time_spent = by_subj_time.get(subj, 0) + by_subj_time.get({'高数II':'高数','有机化学':'有机','概率统计':'概统','大学物理':'大物','分析化学':'分析化学'}.get(subj, subj), 0)
+            if time_spent > 120 and r['score'] < 30:
+                insights.append(f"⚠️ **{subj}** 已投入{time_spent}分钟但就绪度仅{r['score']}分 — 学习方法可能需要调整")
+            if time_spent < 30 and r['score'] < 40:
+                insights.append(f"🔴 **{subj}** 几乎没有学习（{time_spent}min），就绪度{r['score']}分 — 需要尽快开始")
+    except:
+        pass
+
+    # 2. Repeated weak topics (asked Gemini multiple times about same thing)
+    try:
+        probs = json.load(open(PROBLEMS_FILE))
+        topic_count = {}
+        for p in probs:
+            for kw in p.get('keywords', []):
+                topic_count[kw] = topic_count.get(kw, 0) + 1
+        repeated = [(kw, cnt) for kw, cnt in topic_count.items() if cnt >= 3]
+        for kw, cnt in sorted(repeated, key=lambda x: -x[1])[:3]:
+            insights.append(f"🔄 **{kw}** 出现在{cnt}道题中 — 这是你的反复弱点，需要专项突破")
+    except:
+        pass
+
+    # 3. Flashcard difficulty distribution
+    try:
+        fc = json.load(open('/root/.flashcards-server.json'))
+        hard = len([c for c in fc if c.get('difficulty') == 'hard'])
+        easy = len([c for c in fc if c.get('difficulty') == 'easy'])
+        if hard > len(fc) * 0.4:
+            insights.append(f"📊 闪卡中{hard}/{len(fc)}张标记为困难 — 基础可能不扎实，建议先巩固简单概念")
+    except:
+        pass
+
+    # 4. Video watching vs actual learning
+    try:
+        vdata = load_video_courses()
+        for subj, course in vdata.get('courses', {}).items():
+            completed = sum(1 for e in course.get('episodes', {}).values() if e.get('completed'))
+            total = course.get('total', 0)
+            if completed > 5 and readiness.get(subj, {}).get('score', 0) < 30:
+                insights.append(f"📺 {subj}网课看了{completed}/{total}集，但就绪度很低 — 光看不练等于没学")
+    except:
+        pass
+
+    # 5. Time allocation recommendation
+    try:
+        weakest = min(readiness, key=lambda x: readiness[x]['score'])
+        strongest = max(readiness, key=lambda x: readiness[x]['score'])
+        if readiness[weakest]['score'] < readiness[strongest]['score'] - 30:
+            insights.append(f"📋 **建议**: 把{strongest}（{readiness[strongest]['score']}分）的时间匀给{weakest}（{readiness[weakest]['score']}分）")
+    except:
+        pass
+
+    if not insights:
+        insights.append("✅ 目前学习效率良好，继续保持")
+
+    # Generate report
+    md = f"""---
+created: {today}
+tags: [效率分析]
+---
+
+# 📊 学习效率分析
+
+> 📅 {today} | 距期末 **{days_left}** 天
+
+"""
+    for insight in insights:
+        md += f"- {insight}\n"
+
+    # AI generates actionable advice based on insights
+    prompt = f"""以下是一位大一学生的学习效率分析数据，距期末{days_left}天。
+
+发现：
+{chr(10).join(insights)}
+
+各科就绪度：
+{chr(10).join(f'{s}: {r["score"]}分' for s, r in readiness.items())}
+
+请给出3条简短可执行的建议（每条一行），帮助提高学习效率。不要泛泛而谈，要具体。"""
+
+    payload = json.dumps({
+        'model': AI_MODEL,
+        'messages': [{'role': 'user', 'content': prompt}],
+        'max_tokens': 300, 'temperature': 0.4
+    }).encode('utf-8')
+    try:
+        req = urllib.request.Request(AI_API_URL, data=payload, headers={
+            'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+        })
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+        advice = result['choices'][0]['message']['content'].strip()
+        md += f"\n## AI 建议\n\n{advice}\n"
+    except:
+        pass
+
+    write_report(today, '效率分析', md)
+    log(f'Efficiency analysis: {len(insights)} insights')
 
 
 # ========== Content Self-Iteration Engine ==========
@@ -4367,6 +4821,10 @@ A: {card.get('a', '')}
         _time.sleep(2)
 
     subprocess.run(['chown', '-R', 'www-data:www-data', COURSE_DIR], capture_output=True)
+    # --- 6. Mind maps ---
+    log('Heavy: generating mind maps...')
+    generate_mindmaps(now, today)
+
     log('Heavy worker completed all tasks')
 
 
@@ -5053,6 +5511,7 @@ def main():
         memos_video_watch(now, today)
         memos_archive(now, today)
         canvas_monitor(now, today)
+        canvas_grades_track(now, today)
         memos_confusion_detect(now, today)
         fatigue_check(now, today)
         check_achievements(now, today)
@@ -5090,6 +5549,12 @@ def main():
         content_iterate(now, today)
     elif mode == 'navigate':
         navigate_review(now, today)
+    elif mode == 'efficiency':
+        learning_efficiency_analysis(now, today)
+    elif mode == 'strategy':
+        weekly_strategy(now, today)
+    elif mode == 'mindmap':
+        generate_mindmaps(now, today)
     # push mode handled above (before date parsing)
     elif mode == 'snapshot':
         daily_snapshot(now, today)

@@ -617,6 +617,19 @@ tags: [早报]
         md += f"| {name} | {info['credit']} | **{dleft}**天 | {target} | {needed_str} |\n"
     md += "\n"
 
+    # Exam readiness scores
+    readiness = calculate_readiness(today)
+    if readiness:
+        md += "### 📈 考试就绪度\n\n"
+        md += "| 科目 | 就绪度 | 覆盖 | 闪卡 | 题目 | 时长 | 弱点 |\n"
+        md += "|------|--------|------|------|------|------|------|\n"
+        for subj in sorted(readiness, key=lambda x: readiness[x]['score']):
+            r = readiness[subj]
+            score = r['score']
+            bar = '🟢' if score >= 60 else '🟡' if score >= 30 else '🔴'
+            md += f"| {subj} | {bar} **{score}** | {r['coverage']} | {r['flashcards']} | {r['problems']} | {r['study_time']} | {r['weakness']} |\n"
+        md += "\n"
+
     # AI study advice based on yesterday's unmastered items + today's schedule
     try:
         yesterday = today - datetime.timedelta(days=1)
@@ -3583,6 +3596,425 @@ def daily_snapshot(now, today):
     log(f'Daily snapshot: fc={snap.get("flashcards_total")}, probs={snap.get("problems_total")}, study={snap.get("study_minutes_today")}min')
 
 
+# ========== Content Self-Iteration Engine ==========
+
+def content_iterate(now, today):
+    """AI reviews and improves existing flashcards and problems for accuracy and clarity"""
+    import time as _time
+    FC_FILE = '/root/.flashcards-server.json'
+
+    # --- Review flashcards ---
+    try:
+        fc = json.load(open(FC_FILE))
+    except:
+        fc = []
+
+    unverified_fc = [(i, c) for i, c in enumerate(fc) if not c.get('_quality')]
+    reviewed_fc = 0
+    for idx, card in unverified_fc[:15]:
+        prompt = f"""审查这张闪卡的质量。
+
+科目: {card.get('s', '')}
+Q: {card.get('q', '')}
+A: {card.get('a', '')}
+
+检查：1.问题是否清晰 2.答案是否准确完整 3.公式是否正确
+返回JSON: {{"quality":1到5的评分,"fixed_q":"修正后的问题(无需修改则留空)","fixed_a":"修正后的答案(无需修改则留空)","note":"简短说明"}}
+只返回JSON。"""
+        payload = json.dumps({'model': AI_MODEL, 'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 300, 'temperature': 0.2}).encode('utf-8')
+        try:
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                raw = json.loads(resp.read().decode('utf-8'))['choices'][0]['message']['content'].strip()
+            if raw.startswith('```'): raw = '\n'.join(raw.split('\n')[1:])
+            if raw.endswith('```'): raw = '\n'.join(raw.split('\n')[:-1])
+            import re as _re
+            try:
+                review = json.loads(raw)
+            except:
+                m = _re.search(r'\{[\s\S]*\}', raw)
+                review = json.loads(m.group(0)) if m else {}
+
+            if review.get('fixed_q'): fc[idx]['q'] = review['fixed_q']
+            if review.get('fixed_a'): fc[idx]['a'] = review['fixed_a']
+            fc[idx]['_quality'] = review.get('quality', 3)
+            reviewed_fc += 1
+        except:
+            fc[idx]['_quality'] = 0  # Mark as attempted
+        _time.sleep(2)
+
+    if reviewed_fc:
+        with open(FC_FILE, 'w') as f:
+            json.dump(fc, f, ensure_ascii=False, indent=2)
+        log(f'Content iterate: reviewed {reviewed_fc} flashcards')
+
+    # --- Review problems ---
+    try:
+        probs = json.load(open(PROBLEMS_FILE))
+    except:
+        probs = []
+
+    unverified_prob = [p for p in probs if not p.get('_quality')]
+    reviewed_prob = 0
+    for p in unverified_prob[:15]:
+        prompt = f"""审查这道题的质量。
+
+科目: {p.get('subject', '')}
+题目: {p.get('question', '')[:200]}
+解答: {p.get('solution', '')[:300]}
+
+检查：1.题目完整性 2.解答正确性 3.关键步骤是否遗漏
+返回JSON: {{"quality":1到5,"fixed_solution":"修正后的解答(无需修改则留空)","note":"说明"}}
+只返回JSON。"""
+        payload = json.dumps({'model': AI_MODEL, 'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 500, 'temperature': 0.2}).encode('utf-8')
+        try:
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                raw = json.loads(resp.read().decode('utf-8'))['choices'][0]['message']['content'].strip()
+            if raw.startswith('```'): raw = '\n'.join(raw.split('\n')[1:])
+            if raw.endswith('```'): raw = '\n'.join(raw.split('\n')[:-1])
+            import re as _re
+            try:
+                review = json.loads(raw)
+            except:
+                m = _re.search(r'\{[\s\S]*\}', raw)
+                review = json.loads(m.group(0)) if m else {}
+
+            if review.get('fixed_solution'): p['solution'] = review['fixed_solution']
+            p['_quality'] = review.get('quality', 3)
+            reviewed_prob += 1
+        except:
+            p['_quality'] = 0
+        _time.sleep(2)
+
+    if reviewed_prob:
+        with open(PROBLEMS_FILE, 'w') as f:
+            json.dump(probs, f, ensure_ascii=False, indent=2)
+        log(f'Content iterate: reviewed {reviewed_prob} problems')
+
+
+# ========== Daily Precise Review Navigator ==========
+
+def navigate_review(now, today):
+    """Generate a precise review plan: specific notes, problems, flashcards to review today"""
+    today_str = today.isoformat()
+    days_left = (EXAM_DATE - today).days
+
+    items_urgent = []
+    items_important = []
+    items_optional = []
+
+    # 1. Spaced repetition due items → urgent
+    try:
+        sp = json.load(open(SPACED_FILE))
+        due = [it for it in sp if it.get('status') == 'active' and it.get('next_review', '') <= today_str]
+        for it in due[:3]:
+            items_urgent.append(f"复习间隔重复项: {it['text'][:30]}（第{it.get('interval',1)}天复习）")
+    except:
+        pass
+
+    # 2. Unmastered problems → urgent
+    try:
+        probs = json.load(open(PROBLEMS_FILE))
+        unmastered = [p for p in probs if p.get('mastery', 0) < 30]
+        unmastered.sort(key=lambda p: p.get('mastery', 0))
+        for p in unmastered[:2]:
+            items_urgent.append(f"做题: [[AI题库/{p.get('subject','')}]] — {p.get('question','')[:30]}")
+    except:
+        pass
+
+    # 3. Least studied subject → important
+    try:
+        logs = load_study_log()
+        by_subj = {}
+        for e in logs:
+            by_subj[e.get('subject', '?')] = by_subj.get(e.get('subject', '?'), 0) + e.get('duration', 0)
+        all_subjs = list(COURSE_EXAMS.keys())
+        for subj in all_subjs:
+            if subj not in by_subj or by_subj.get(subj, 0) < 60:
+                items_important.append(f"⚠️ {subj} 累计学习不足1小时，需要开始复习")
+                break
+    except:
+        pass
+
+    # 4. Uncovered chapters → important
+    try:
+        for subj in ['高数II', '有机化学', '概率统计']:
+            cdir = os.path.join(COURSE_DIR, SUBJECT_MAP.get(subj, subj))
+            if not os.path.isdir(cdir):
+                continue
+            chapters = [f for f in os.listdir(cdir) if f.startswith('ch') and f.endswith('.md')]
+            # Check which chapters appear in AI notes
+            ai_dir = os.path.join(AI_DIR, subj)
+            ai_content = ''
+            if os.path.isdir(ai_dir):
+                for fn in os.listdir(ai_dir):
+                    if fn.endswith('.md'):
+                        ai_content += fn + ' '
+            for ch in chapters:
+                ch_name = ch.replace('.md', '').replace('_', ' ')
+                if ch_name[4:] not in ai_content:  # Skip "ch08_" prefix
+                    items_important.append(f"看 [[课程/{subj}/{ch.replace('.md','')}]] — 这章还没复习过")
+                    break
+    except:
+        pass
+
+    # 5. Random flashcard review → optional
+    try:
+        fc = json.load(open('/root/.flashcards-server.json'))
+        low_quality = [c for c in fc if c.get('_quality', 5) <= 2]
+        if low_quality:
+            items_optional.append(f"刷 {min(10, len(fc))} 张闪卡（{len(low_quality)} 张需要加强）")
+        else:
+            items_optional.append(f"刷 10 张闪卡巩固记忆")
+    except:
+        pass
+
+    # 6. Video continue → optional
+    try:
+        vdata = load_video_courses()
+        for subj, course in vdata.get('courses', {}).items():
+            ep = course.get('current_episode', 1)
+            eps = course.get('episodes', {})
+            info = eps.get(str(ep), {})
+            if not info.get('completed'):
+                remaining = 100 - info.get('progress', 0)
+                items_optional.append(f"继续看{subj}网课 P{ep}（还剩{remaining}%）")
+    except:
+        pass
+
+    # Estimate total time
+    total_items = len(items_urgent) + len(items_important) + len(items_optional)
+    est_hours = round(total_items * 0.4, 1)
+
+    md = f"""---
+created: {today}
+tags: [复习导航]
+---
+
+# 🧭 今日精准复习导航
+
+> 📅 {today} | 距期末 **{days_left}** 天 | 预计 {est_hours} 小时
+
+"""
+    if items_urgent:
+        md += "## 🔴 紧急（今天必须做）\n\n"
+        for i, item in enumerate(items_urgent):
+            md += f"{i+1}. {item}\n"
+        md += "\n"
+
+    if items_important:
+        md += "## 🟡 重要（本周内完成）\n\n"
+        for i, item in enumerate(items_important):
+            md += f"{i+1}. {item}\n"
+        md += "\n"
+
+    if items_optional:
+        md += "## 🟢 建议（有空就做）\n\n"
+        for i, item in enumerate(items_optional):
+            md += f"{i+1}. {item}\n"
+        md += "\n"
+
+    write_report(today, '精准复习导航', md)
+
+    # Bark push summary
+    urgent_count = len(items_urgent)
+    important_count = len(items_important)
+    bark_push(f'🧭 今日复习导航', f'🔴紧急{urgent_count}项 🟡重要{important_count}项 预计{est_hours}h', group='morning')
+    log(f'Navigate: {urgent_count} urgent, {important_count} important, {len(items_optional)} optional')
+
+
+# ========== Exam Readiness Score ==========
+
+def calculate_readiness(today):
+    """Calculate per-subject exam readiness score (0-100)"""
+    days_left = (EXAM_DATE - today).days
+    FC_SHORT = {'高数II':'高数','有机化学':'有机','概率统计':'概统','大学物理':'大物',
+                '分析化学':'分析化学','普通生物学':'普生','AI基础':'AI基础','习思想':'习思想'}
+    readiness = {}
+
+    # Load all data once
+    try:
+        fc = json.load(open('/root/.flashcards-server.json'))
+    except:
+        fc = []
+    try:
+        probs = json.load(open(PROBLEMS_FILE))
+    except:
+        probs = []
+    try:
+        logs = load_study_log()
+    except:
+        logs = []
+    try:
+        wk = load_weaknesses()
+    except:
+        wk = []
+
+    for subj, info in COURSE_EXAMS.items():
+        short = FC_SHORT.get(subj, subj)
+        credit = info.get('credit', 2)
+        target_hours = credit * 15  # Rough: 15 hours per credit
+
+        # 1. Flashcard mastery (20%)
+        subj_fc = [c for c in fc if c.get('s') == short]
+        fc_score = 0
+        if subj_fc:
+            # Cards with quality >= 3 or detailed_answer count as "mastered"
+            good = len([c for c in subj_fc if c.get('_quality', 0) >= 3 or c.get('detailed_answer')])
+            fc_score = min(100, int(good / max(len(subj_fc), 1) * 100))
+
+        # 2. Problem mastery (20%)
+        subj_probs = [p for p in probs if p.get('subject') == subj]
+        prob_score = 0
+        if subj_probs:
+            mastered = len([p for p in subj_probs if p.get('mastery', 0) >= 60])
+            prob_score = min(100, int(mastered / max(len(subj_probs), 1) * 100))
+
+        # 3. Study time (15%)
+        subj_mins = sum(e.get('duration', 0) for e in logs if e.get('subject') == subj or e.get('subject') == short)
+        time_score = min(100, int(subj_mins / 60 / target_hours * 100))
+
+        # 4. Coverage estimate (30%) - simplified: based on file existence
+        coverage_score = 30  # Default
+        cdir = os.path.join(COURSE_DIR, SUBJECT_MAP.get(subj, subj))
+        if os.path.isdir(cdir):
+            has_review = os.path.exists(os.path.join(cdir, '期末复习.md'))
+            has_essence = os.path.exists(os.path.join(cdir, '期末冲刺精华.md'))
+            has_formulas = os.path.exists(os.path.join(cdir, '公式速查表.md'))
+            coverage_score = (40 if has_review else 0) + (30 if has_essence else 0) + (30 if has_formulas else 0)
+
+        # 5. Weakness (15%)
+        subj_wk = [w for w in wk if subj in w.get('text', '')]
+        active_wk = len([w for w in subj_wk if w.get('status', 'active') == 'active'])
+        weakness_score = max(0, 100 - active_wk * 20)
+
+        # Weighted total
+        total = int(
+            coverage_score * 0.30 +
+            fc_score * 0.20 +
+            prob_score * 0.20 +
+            time_score * 0.15 +
+            weakness_score * 0.15
+        )
+
+        readiness[subj] = {
+            'score': total,
+            'coverage': coverage_score,
+            'flashcards': fc_score,
+            'problems': prob_score,
+            'study_time': time_score,
+            'weakness': weakness_score,
+        }
+
+    return readiness
+
+
+# ========== Flashcard Quality Enhancer ==========
+
+def flashcard_enhance(now, today):
+    """AI reviews and improves low-quality flashcards"""
+    FC_FILE = '/root/.flashcards-server.json'
+    try:
+        fc = json.load(open(FC_FILE))
+    except:
+        return
+
+    # Find cards with short answers (likely low quality)
+    candidates = [(i, c) for i, c in enumerate(fc) if len(c.get('a', '')) < 30 and not c.get('_enhanced')]
+    if not candidates:
+        log('Enhance: all cards already enhanced')
+        return
+
+    enhanced = 0
+    for idx, card in candidates[:5]:  # 5 cards per run
+        prompt = f"""这是一张闪卡，答案太短不够详细。请改进：
+
+Q: {card.get('q', '')}
+A: {card.get('a', '')}
+科目: {card.get('s', '')}
+
+请返回改进后的答案（保留公式用$...$，50-80字，包含关键公式和一句记忆提示）。只返回答案文本。"""
+
+        payload = json.dumps({
+            'model': AI_MODEL,
+            'messages': [{'role': 'user', 'content': prompt}],
+            'max_tokens': 150, 'temperature': 0.3
+        }).encode('utf-8')
+
+        try:
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+            })
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+            new_a = result['choices'][0]['message']['content'].strip()
+            if new_a and len(new_a) > len(card.get('a', '')):
+                fc[idx]['a'] = new_a
+                fc[idx]['_enhanced'] = True
+                enhanced += 1
+        except:
+            pass
+        import time as _time
+        _time.sleep(1.5)
+
+    if enhanced:
+        with open(FC_FILE, 'w') as f:
+            json.dump(fc, f, ensure_ascii=False, indent=2)
+        log(f'Enhanced {enhanced} flashcards')
+
+
+# ========== Problem Solution Enricher ==========
+
+def problem_enrich(now, today):
+    """Add detailed step-by-step solutions to problems with short solutions"""
+    try:
+        probs = json.load(open(PROBLEMS_FILE))
+    except:
+        return
+
+    candidates = [p for p in probs if len(p.get('solution', '')) < 50 and not p.get('_enriched')]
+    if not candidates:
+        return
+
+    enriched = 0
+    for p in candidates[:3]:
+        prompt = f"""这道题的解答太简略，请补充完整的分步解答：
+
+题目：{p.get('question', '')}
+当前解答：{p.get('solution', '')}
+科目：{p.get('subject', '')}
+
+请给出详细的分步解答（3-5步），公式用$...$格式。只输出解答。"""
+
+        payload = json.dumps({
+            'model': AI_MODEL,
+            'messages': [{'role': 'user', 'content': prompt}],
+            'max_tokens': 500, 'temperature': 0.3
+        }).encode('utf-8')
+
+        try:
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+            })
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+            new_sol = result['choices'][0]['message']['content'].strip()
+            if new_sol and len(new_sol) > len(p.get('solution', '')):
+                p['solution'] = new_sol
+                p['_enriched'] = True
+                enriched += 1
+        except:
+            pass
+        import time as _time
+        _time.sleep(1.5)
+
+    if enriched:
+        with open(PROBLEMS_FILE, 'w') as f:
+            json.dump(probs, f, ensure_ascii=False, indent=2)
+        log(f'Enriched {enriched} problem solutions')
+
+
 # ========== Hourly Quick Quiz Push ==========
 
 def hourly_quiz_push(now, today):
@@ -3650,6 +4082,292 @@ def hourly_quiz_push(now, today):
         with open(state_file, 'w') as f:
             json.dump(state, f)
         log(f'Hourly quiz: {source} - {clean_q[:25]}')
+
+
+# ========== Heavy Worker (Nightly Batch) ==========
+
+def heavy_worker(now, today):
+    """Run all heavy AI tasks: exam bank, flashcard expand, chapter practice, cross-subject, mnemonics"""
+    import time as _time
+
+    # --- 1. Pre-generate exam bank ---
+    log('Heavy: generating exam bank...')
+    EXAM_BANK = '/root/.exam-bank.json'
+    try:
+        bank = json.load(open(EXAM_BANK))
+    except:
+        bank = {}
+
+    SUBJECTS_EXAM = ['高数II', '有机化学', '概率统计', '大学物理', '分析化学', '普通生物学']
+    for subj in SUBJECTS_EXAM:
+        existing = len(bank.get(subj, []))
+        if existing >= 5:
+            continue
+        needed = 5 - existing
+        course_ctx = ''
+        cdir = os.path.join(COURSE_DIR, SUBJECT_MAP.get(subj, subj))
+        if os.path.isdir(cdir):
+            for fn in ['期末复习.md', '典型题型与解法.md']:
+                fp = os.path.join(cdir, fn)
+                if os.path.exists(fp):
+                    with open(fp, 'r', encoding='utf-8') as f:
+                        course_ctx += f.read(2000) + '\n'
+
+        for i in range(needed):
+            prompt = f"""为《{subj}》生成一套模拟试卷（第{existing+i+1}套）。
+
+参考资料：{course_ctx[:3000]}
+
+共8题：2选择(5分)+2填空(5分)+2计算(15分)+1证明(20分)+1综合(20分)=100分
+公式用$...$。返回JSON:
+{{"total_points":100,"questions":[{{"id":1,"type":"选择","points":5,"question":"","options":["A","B","C","D"],"answer":"A","solution":""}},...]}}
+只返回JSON。"""
+
+            payload = json.dumps({
+                'model': AI_MODEL,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 3000, 'temperature': 0.6
+            }).encode('utf-8')
+            try:
+                req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                    'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+                })
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    result = json.loads(resp.read().decode('utf-8'))
+                raw = result['choices'][0]['message']['content'].strip()
+                if raw.startswith('```'): raw = '\n'.join(raw.split('\n')[1:])
+                if raw.endswith('```'): raw = '\n'.join(raw.split('\n')[:-1])
+                import re as _re
+                try:
+                    exam = json.loads(raw)
+                except:
+                    m = _re.search(r'\{[\s\S]*\}', raw)
+                    exam = json.loads(m.group(0)) if m else None
+                if exam:
+                    exam['subject'] = subj
+                    exam['created'] = today.isoformat()
+                    bank.setdefault(subj, []).append(exam)
+                    log(f'Exam bank: {subj} #{existing+i+1}')
+            except Exception as e:
+                log(f'Exam bank error ({subj}): {e}')
+            _time.sleep(2)
+
+    with open(EXAM_BANK, 'w') as f:
+        json.dump(bank, f, ensure_ascii=False, indent=2)
+    total_exams = sum(len(v) for v in bank.values())
+    log(f'Exam bank: {total_exams} total exams')
+
+    # --- 2. Flashcard detailed expansion ---
+    log('Heavy: expanding flashcards...')
+    FC_FILE = '/root/.flashcards-server.json'
+    try:
+        fc = json.load(open(FC_FILE))
+    except:
+        fc = []
+
+    expanded = 0
+    for card in fc:
+        if card.get('detailed_answer'):
+            continue
+        prompt = f"""为这张闪卡生成详细讲解。
+
+Q: {card.get('q', '')}
+A: {card.get('a', '')}
+科目: {card.get('s', '')}
+
+请输出：
+1. 详细解释（100字，帮助理解）
+2. 记忆口诀（一句话）
+3. 相关例题（一道简短的）
+
+用纯文本，不要LaTeX。200字以内。"""
+
+        payload = json.dumps({
+            'model': AI_MODEL,
+            'messages': [{'role': 'user', 'content': prompt}],
+            'max_tokens': 300, 'temperature': 0.4
+        }).encode('utf-8')
+        try:
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+            })
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+            detail = result['choices'][0]['message']['content'].strip()
+            card['detailed_answer'] = detail
+            expanded += 1
+        except:
+            pass
+        _time.sleep(1)
+        if expanded >= 20:  # Max 20 per run
+            break
+
+    if expanded:
+        with open(FC_FILE, 'w') as f:
+            json.dump(fc, f, ensure_ascii=False, indent=2)
+        log(f'Flashcard expand: {expanded} cards')
+
+    # --- 3. Chapter practice sets ---
+    log('Heavy: generating chapter practice...')
+    CHAP_DONE = '/root/.chapter-practice-done.json'
+    try:
+        chap_done = set(json.load(open(CHAP_DONE)))
+    except:
+        chap_done = set()
+
+    for root, dirs, files in os.walk(COURSE_DIR):
+        dirs[:] = [d for d in dirs if d != '闪卡']
+        for fname in files:
+            if not fname.endswith('.md') or fname in ('期末冲刺精华.md', '网课笔记.md', '记忆口诀.md'):
+                continue
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, VAULT_DIR)
+            if rel in chap_done:
+                continue
+            subj = os.path.basename(os.path.dirname(fpath))
+
+            try:
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                if len(content) < 200:
+                    chap_done.add(rel)
+                    continue
+
+                prompt = f"""根据以下{subj}课程笔记，生成5道章节练习题（选择1+填空1+计算2+概念1）。
+
+{content[:3000]}
+
+每题含完整解答。公式用$...$，方括号用$\\left[...\\right]$。
+输出Markdown格式，每题用 ## 题号 开头，解答用 > [!tip]- 解答 折叠。"""
+
+                payload = json.dumps({
+                    'model': AI_MODEL,
+                    'messages': [{'role': 'user', 'content': prompt}],
+                    'max_tokens': 2500, 'temperature': 0.4
+                }).encode('utf-8')
+                req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                    'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+                })
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    result = json.loads(resp.read().decode('utf-8'))
+                practice = result['choices'][0]['message']['content'].strip()
+                if practice.startswith('```'): practice = '\n'.join(practice.split('\n')[1:])
+                if practice.endswith('```'): practice = '\n'.join(practice.split('\n')[:-1])
+
+                # Save to vault
+                practice_dir = os.path.join(VAULT_DIR, 'AI题库')
+                os.makedirs(practice_dir, exist_ok=True)
+                safe_subj = subj.replace('/', '_')
+                pf = os.path.join(practice_dir, f'{safe_subj}_章节练习.md')
+                header = ''
+                if not os.path.exists(pf):
+                    header = f"---\ntags: [AI题库, {subj}, 章节练习]\n---\n\n# {subj} 章节练习\n\n"
+                with open(pf, 'a', encoding='utf-8') as f:
+                    f.write(header + f"\n---\n\n## 来源: {fname}\n\n{practice}\n\n")
+
+                chap_done.add(rel)
+                log(f'Chapter practice: {subj}/{fname}')
+            except Exception as e:
+                log(f'Chapter practice error: {e}')
+                chap_done.add(rel)
+            _time.sleep(2)
+            if len(chap_done) % 10 == 0:
+                with open(CHAP_DONE, 'w') as f:
+                    json.dump(list(chap_done), f)
+
+    with open(CHAP_DONE, 'w') as f:
+        json.dump(list(chap_done), f)
+    subprocess.run(['chown', '-R', 'www-data:www-data', os.path.join(VAULT_DIR, 'AI题库')], capture_output=True)
+
+    # --- 4. Cross-subject knowledge map ---
+    log('Heavy: cross-subject analysis...')
+    cross_file = os.path.join(COURSE_DIR, '跨科目知识关联.md')
+    if not os.path.exists(cross_file):
+        all_subjects_ctx = ''
+        for subj_dir in sorted(os.listdir(COURSE_DIR)):
+            fp = os.path.join(COURSE_DIR, subj_dir, '期末复习.md')
+            if os.path.exists(fp):
+                with open(fp, 'r', encoding='utf-8') as f:
+                    all_subjects_ctx += f'\n=== {subj_dir} ===\n' + f.read(1500)
+
+        if all_subjects_ctx:
+            prompt = f"""以下是8门大学课程的期末复习笔记摘要。请找出所有跨科目的知识关联。
+
+{all_subjects_ctx[:8000]}
+
+输出Markdown格式：
+## 高数 ↔ 概率统计
+- 多元积分 ↔ 联合分布（描述具体关联）
+
+## 有机化学 ↔ 分析化学
+- 酸碱理论 ↔ 滴定分析
+
+找出所有有意义的关联对，每对说明为什么相关以及如何互相帮助复习。"""
+
+            payload = json.dumps({
+                'model': AI_MODEL,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 3000, 'temperature': 0.3
+            }).encode('utf-8')
+            try:
+                req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                    'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+                })
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    result = json.loads(resp.read().decode('utf-8'))
+                analysis = result['choices'][0]['message']['content'].strip()
+                md = f"---\ntags: [跨科目, 知识关联]\ncreated: {today}\n---\n\n# 跨科目知识关联\n\n> AI 自动分析，{today}\n\n{analysis}\n"
+                with open(cross_file, 'w', encoding='utf-8') as f:
+                    f.write(md)
+                subprocess.run(['chown', 'www-data:www-data', cross_file], capture_output=True)
+                log('Cross-subject analysis done')
+            except Exception as e:
+                log(f'Cross-subject error: {e}')
+
+    # --- 5. Generate mnemonics ---
+    log('Heavy: generating mnemonics...')
+    for subj_dir in sorted(os.listdir(COURSE_DIR)):
+        mnem_file = os.path.join(COURSE_DIR, subj_dir, '记忆口诀.md')
+        if os.path.exists(mnem_file):
+            continue
+        formula_file = os.path.join(COURSE_DIR, subj_dir, '公式速查表.md')
+        if not os.path.exists(formula_file):
+            continue
+
+        with open(formula_file, 'r', encoding='utf-8') as f:
+            formulas = f.read()
+
+        prompt = f"""以下是{subj_dir}的公式速查表。为每个重要公式/概念生成一个记忆口诀或联想法。
+
+{formulas[:4000]}
+
+输出格式（每个一行）：
+- **公式名**: 口诀/联想法
+
+要求简短有趣好记，可以用谐音、首字母缩写、故事联想等方法。"""
+
+        payload = json.dumps({
+            'model': AI_MODEL,
+            'messages': [{'role': 'user', 'content': prompt}],
+            'max_tokens': 2000, 'temperature': 0.6
+        }).encode('utf-8')
+        try:
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+            })
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+            mnemonics = result['choices'][0]['message']['content'].strip()
+            md = f"---\ntags: [记忆口诀, {subj_dir}]\ncreated: {today}\n---\n\n# {subj_dir} 记忆口诀\n\n> AI 生成，辅助记忆\n\n{mnemonics}\n"
+            with open(mnem_file, 'w', encoding='utf-8') as f:
+                f.write(md)
+            log(f'Mnemonics: {subj_dir}')
+        except Exception as e:
+            log(f'Mnemonics error ({subj_dir}): {e}')
+        _time.sleep(2)
+
+    subprocess.run(['chown', '-R', 'www-data:www-data', COURSE_DIR], capture_output=True)
+    log('Heavy worker completed all tasks')
 
 
 # ========== Problem Variant Factory ==========
@@ -4349,6 +5067,10 @@ def main():
     elif mode == 'timeslot':
         smart_timeslot(now, today)
         hourly_quiz_push(now, today)
+        # Run enhancers on even hours (10, 12, 14, 16, 18, 20)
+        if now.hour % 2 == 0 and now.hour >= 10:
+            flashcard_enhance(now, today)
+            problem_enrich(now, today)
     elif mode == 'crosslink':
         auto_crosslink(now, today)
         note_quality_check(now, today)
@@ -4362,6 +5084,12 @@ def main():
         problem_factory(now, today)
     elif mode == 'enrich':
         task_enrich(now, today)
+    elif mode == 'heavy':
+        heavy_worker(now, today)
+    elif mode == 'iterate':
+        content_iterate(now, today)
+    elif mode == 'navigate':
+        navigate_review(now, today)
     # push mode handled above (before date parsing)
     elif mode == 'snapshot':
         daily_snapshot(now, today)

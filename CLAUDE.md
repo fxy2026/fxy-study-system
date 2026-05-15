@@ -4,7 +4,7 @@
 
 ## 快速参考
 
-- **服务器**: `ssh -i ~/.ssh/server.pem root@202.120.1.230`
+- **服务器**: `ssh -i ~/.ssh/server.pem root@YOUR_SERVER_IP`
 - **后端代码**: `/root/chat-server.cjs` (端口 3457)
 - **前端页面**: `/root/quartz/public/apps/`
 - **Vault 同步目录**: `/root/webdav-vault/`
@@ -14,14 +14,14 @@
 
 ```bash
 # 部署前端
-scp -i ~/.ssh/server.pem <文件> root@202.120.1.230:/root/quartz/public/apps/
+scp -i ~/.ssh/server.pem <文件> root@YOUR_SERVER_IP:/root/quartz/public/apps/
 
 # 部署后端并重启
-scp -i ~/.ssh/server.pem <文件> root@202.120.1.230:/root/chat-server.cjs
-ssh -i ~/.ssh/server.pem root@202.120.1.230 "systemctl restart chat-server"
+scp -i ~/.ssh/server.pem <文件> root@YOUR_SERVER_IP:/root/chat-server.cjs
+ssh -i ~/.ssh/server.pem root@YOUR_SERVER_IP "systemctl restart chat-server"
 
 # 检查服务
-ssh -i ~/.ssh/server.pem root@202.120.1.230 "systemctl status chat-server --no-pager"
+ssh -i ~/.ssh/server.pem root@YOUR_SERVER_IP "systemctl status chat-server --no-pager"
 ```
 
 ## 注意事项

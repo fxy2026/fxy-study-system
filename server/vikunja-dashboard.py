@@ -2797,6 +2797,145 @@ def get_video_study_minutes(today_str):
     return total_min
 
 
+# ========== Canvas Real-time Monitor ==========
+
+def canvas_monitor(now, today):
+    """Detect new Canvas assignments, grades, announcements and push immediately"""
+    import ssl
+    CANVAS_API = 'https://oc.sjtu.edu.cn/api/v1'
+    CANVAS_TOKEN = 'YOUR_CANVAS_TOKEN'
+    STATE_FILE = '/root/.canvas-state.json'
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with open(STATE_FILE, 'r') as f:
+            state = json.load(f)
+    except:
+        state = {'seen_assignments': [], 'seen_grades': [], 'last_check': ''}
+
+    new_items = []
+
+    # Check todo (assignments)
+    try:
+        req = urllib.request.Request(
+            CANVAS_API + '/users/self/todo?per_page=30',
+            headers={'Authorization': f'Bearer {CANVAS_TOKEN}'}
+        )
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+            todos = json.loads(resp.read().decode('utf-8'))
+
+        for item in todos:
+            assignment = item.get('assignment') or item
+            aid = str(assignment.get('id', ''))
+            name = assignment.get('name', '')
+            course = item.get('context_name', '')
+            if aid and aid not in state['seen_assignments']:
+                new_items.append(f'📚 新作业: {course} - {name}')
+                state['seen_assignments'].append(aid)
+    except:
+        pass
+
+    # Check recent grades (submissions with score)
+    try:
+        req = urllib.request.Request(
+            CANVAS_API + '/users/self/activity_stream?per_page=10',
+            headers={'Authorization': f'Bearer {CANVAS_TOKEN}'}
+        )
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+            stream = json.loads(resp.read().decode('utf-8'))
+
+        for item in stream:
+            if item.get('type') == 'Submission':
+                sid = str(item.get('id', ''))
+                title = item.get('title', '')
+                score = item.get('score')
+                if sid and sid not in state['seen_grades'] and score is not None:
+                    new_items.append(f'📊 成绩公布: {title} - {score}分')
+                    state['seen_grades'].append(sid)
+    except:
+        pass
+
+    # Keep state files small
+    state['seen_assignments'] = state['seen_assignments'][-100:]
+    state['seen_grades'] = state['seen_grades'][-100:]
+    state['last_check'] = now.isoformat()
+
+    with open(STATE_FILE, 'w') as f:
+        json.dump(state, f, ensure_ascii=False)
+
+    if new_items:
+        msg = '\n'.join(new_items[:5])
+        bark_push('📢 Canvas 更新', msg, sound='bell', group='canvas')
+        log(f'Canvas monitor: {len(new_items)} new items')
+
+
+# ========== Memos → Vault Archive ==========
+
+def memos_archive(now, today):
+    """Archive all today's memos to vault as a daily log"""
+    today_str = today.isoformat()
+
+    try:
+        req = urllib.request.Request(
+            f'{MEMOS_API}/memos?pageSize=50',
+            headers={'Authorization': f'Bearer {MEMOS_TOKEN}'}
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except:
+        return
+
+    today_memos = []
+    for m in data.get('memos', []):
+        ct = m.get('createTime', '')
+        # Handle UTC→CST conversion
+        try:
+            from datetime import timezone
+            utc_time = datetime.datetime.fromisoformat(ct.replace('Z', '+00:00'))
+            cst_time = utc_time.astimezone(TZ)
+            if cst_time.date() != today:
+                continue
+            time_str = cst_time.strftime('%H:%M')
+        except:
+            if not ct.startswith(today_str):
+                continue
+            time_str = ct[11:16]
+
+        content = m.get('content', '').strip()
+        if not content:
+            continue
+        today_memos.append({'time': time_str, 'content': content})
+
+    if not today_memos:
+        return
+
+    # Write to vault
+    day_dir = os.path.join(NOTE_DIR, today_str)
+    os.makedirs(day_dir, exist_ok=True)
+    archive_path = os.path.join(day_dir, 'Memos速记.md')
+
+    md = f"""---
+created: {today}
+tags: [Memos, 速记]
+---
+
+# 📱 Memos 速记 ({today_str})
+
+> 共 {len(today_memos)} 条
+
+"""
+    for m in sorted(today_memos, key=lambda x: x['time']):
+        content = m['content'].replace('\n', '\n> ')
+        md += f"### {m['time']}\n\n> {content}\n\n"
+
+    with open(archive_path, 'w', encoding='utf-8') as f:
+        f.write(md)
+    subprocess.run(['chown', '-R', 'www-data:www-data', day_dir], capture_output=True)
+
+
 # ========== Fatigue Detection ==========
 
 FATIGUE_KEYWORDS = ['好累', '累了', '学不动', '崩了', '不想学', '太难了', '放弃', '焦虑', '烦', '头疼', '困死', '摆烂', '不行了', '学吐了']
@@ -3327,6 +3466,8 @@ def main():
         memos_study_log(now, today)
         memos_lookup(now, today)
         memos_video_watch(now, today)
+        memos_archive(now, today)
+        canvas_monitor(now, today)
         fatigue_check(now, today)
         check_achievements(now, today)
     elif mode == 'bedtime':

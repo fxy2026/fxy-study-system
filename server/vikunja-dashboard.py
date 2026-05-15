@@ -3143,7 +3143,7 @@ def flashcard_factory(now, today):
         existing = []
 
     processed = 0
-    for fpath, rel, subj in candidates[:3]:
+    for fpath, rel, subj in candidates[:10]:  # 10 files/night (quota: 100req/min)
         try:
             with open(fpath, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -3583,6 +3583,75 @@ def daily_snapshot(now, today):
     log(f'Daily snapshot: fc={snap.get("flashcards_total")}, probs={snap.get("problems_total")}, study={snap.get("study_minutes_today")}min')
 
 
+# ========== Hourly Quick Quiz Push ==========
+
+def hourly_quiz_push(now, today):
+    """Push one quick quiz question to Bark every hour during daytime"""
+    import random
+    hour = now.hour
+
+    # Only during study hours
+    if hour < 9 or hour > 21:
+        return
+
+    # Don't repeat within same hour
+    state_file = '/root/.hourly-quiz-state.json'
+    try:
+        with open(state_file, 'r') as f:
+            state = json.load(f)
+    except:
+        state = {}
+
+    key = f'{today.isoformat()}_{hour}'
+    if state.get(key):
+        return
+
+    # Pick a random problem or flashcard
+    question = ''
+    answer = ''
+    source = ''
+
+    try:
+        probs = json.load(open(PROBLEMS_FILE))
+        # Prefer unmastered problems
+        unmastered = [p for p in probs if p.get('mastery', 0) < 50]
+        pool = unmastered if unmastered else probs
+        if pool:
+            p = random.choice(pool)
+            question = p.get('question', '')[:100]
+            answer = p.get('key_insight', '') or p.get('solution', '')[:60]
+            source = p.get('subject', '')
+    except:
+        pass
+
+    if not question:
+        try:
+            fc = json.load(open('/root/.flashcards-server.json'))
+            if fc:
+                c = random.choice(fc)
+                question = c.get('q', '')[:100]
+                answer = c.get('a', '')[:60]
+                source = c.get('s', '')
+        except:
+            pass
+
+    if question:
+        # Strip LaTeX for Bark
+        clean_q = question.replace('$', '').replace('\\', '').replace('left[', '[').replace('right]', ']')
+        clean_a = answer.replace('$', '').replace('\\', '')
+        title = f'🧠 快问快答 ({source})'
+        body = f'Q: {clean_q[:80]}\n\n💡 {clean_a[:60]}'
+        bark_push(title, body, sound='silence', group='quiz')
+
+        state[key] = True
+        # Clean old entries
+        cutoff = (today - datetime.timedelta(days=2)).isoformat()
+        state = {k: v for k, v in state.items() if k >= cutoff}
+        with open(state_file, 'w') as f:
+            json.dump(state, f)
+        log(f'Hourly quiz: {source} - {clean_q[:25]}')
+
+
 # ========== Problem Variant Factory ==========
 
 def variant_factory(now, today):
@@ -3607,7 +3676,7 @@ def variant_factory(now, today):
         return
 
     new_variants = []
-    for p in candidates[:3]:
+    for p in candidates[:8]:  # 8 problems → 16 variants/night
         prompt = f"""以下是一道练习题。请生成2个变式题（改变数字/条件/问法，但考察同样的知识点）。
 
 原题：{p.get('question', '')}
@@ -3703,7 +3772,7 @@ def problem_factory(now, today):
     except:
         probs = []
 
-    for fpath, rel, subj in candidates[:2]:
+    for fpath, rel, subj in candidates[:6]:  # 6 files → 12-18 problems/night
         try:
             with open(fpath, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -4279,6 +4348,7 @@ def main():
         proactive_review_evaluate(now, today)
     elif mode == 'timeslot':
         smart_timeslot(now, today)
+        hourly_quiz_push(now, today)
     elif mode == 'crosslink':
         auto_crosslink(now, today)
         note_quality_check(now, today)

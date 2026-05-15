@@ -110,6 +110,8 @@ h1{font-size:22px;text-align:center;margin-bottom:4px;background:linear-gradient
 <a class="card" href="flashcards.html"><span class="card-icon">🃏</span><div class="card-title">闪卡复习</div><div class="card-desc">250+ 张 · 8科</div></a>
 <a class="card" href="weakness.html"><span class="card-icon">🎯</span><div class="card-title">弱点分析</div><div class="card-desc">AI 知识盲区分析</div></a>
 <a class="card" href="problems.html"><span class="card-icon">📚</span><div class="card-title">AI 题库</div><div class="card-desc">Gemini对话自动提取</div></a>
+<a class="card" href="exam.html"><span class="card-icon">📝</span><div class="card-title">模拟考试</div><div class="card-desc">AI出题+计时+批改</div></a>
+<a class="card" href="report.html"><span class="card-icon">📈</span><div class="card-title">学习报告</div><div class="card-desc">数据可视化仪表盘</div></a>
 <a class="card" href="formulas.html"><span class="card-icon">📐</span><div class="card-title">公式速查</div><div class="card-desc">搜索 · 收藏 · 打印</div></a>
 <a class="card" href="mistakes.html"><span class="card-icon">📝</span><div class="card-title">错题本</div><div class="card-desc">拍照 · LaTeX · 复习</div></a>
 <a class="card" href="focus.html"><span class="card-icon">🍅</span><div class="card-title">专注计时</div><div class="card-desc">番茄钟 · Bark提醒</div></a>
@@ -137,7 +139,7 @@ if ('serviceWorker' in navigator) {
 }
 
 function checkPw(){
-  if(document.getElementById('pw-input').value==='YOUR_PASSWORD'){
+  if(document.getElementById('pw-input').value==='Fxy@notes2026'){
     document.getElementById('pw-overlay').style.display='none';
     document.getElementById('app').style.display='';
     loadDashboard();

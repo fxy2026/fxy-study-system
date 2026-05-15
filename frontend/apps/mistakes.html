@@ -70,6 +70,14 @@ header h1{font-size:26px;background:linear-gradient(90deg,#6c63ff,#ff6584);-webk
 .modal h3{margin-bottom:16px}
 .review-toggle{position:fixed;bottom:20px;right:20px;z-index:100}
 @media(max-width:600px){.container{padding:12px}header h1{font-size:20px}.toolbar{flex-direction:column}}
+/* mobile-fix */
+@media(max-width:600px){
+  .container{padding:0 8px}
+  .form-card{padding:14px}
+  .mistake-card{padding:12px}
+  .btn,button{min-height:44px}
+}
+
 </style>
 </head>
 <body>
@@ -147,7 +155,7 @@ header h1{font-size:26px;background:linear-gradient(90deg,#6c63ff,#ff6584);-webk
 // --- Auth ---
 // Password disabled - moved to DOMContentLoaded
 function doLogin(){
-  if(document.getElementById('pwd-input').value==='YOUR_PASSWORD'){
+  if(document.getElementById('pwd-input').value==='Fxy@notes2026'){
     document.getElementById('login-overlay').style.display='none';
     document.getElementById('main-app').style.display='block';
     sessionStorage.setItem('mt_auth','1');

@@ -2428,6 +2428,319 @@ tags: [AI题库, {subj}]
     log(f'Batch extraction done: {total_extracted} problems from {len(existing_sources)} notes')
 
 
+# ========== Compile Exam Essentials ==========
+
+def compile_subject(now, today, subject):
+    """Compile all study materials into one exam essentials document per subject"""
+    days_left = (EXAM_DATE - today).days
+    SUBJECT_ALIAS = {
+        '高数': '高数II', '有机': '有机化学', '概统': '概率统计', '大物': '大学物理',
+        '分化': '分析化学', '普生': '普通生物学', 'AI': 'AI基础',
+    }
+    full = SUBJECT_ALIAS.get(subject, SUBJECT_MAP.get(subject, subject))
+
+    # 1. Read course notes
+    course_content = ''
+    course_dir = os.path.join(COURSE_DIR, full)
+    if os.path.isdir(course_dir):
+        for fname in sorted(os.listdir(course_dir)):
+            if fname.endswith('.md') and fname != '期末冲刺精华.md':
+                fpath = os.path.join(course_dir, fname)
+                try:
+                    with open(fpath, 'r', encoding='utf-8') as f:
+                        course_content += f'\n\n=== {fname} ===\n' + f.read(3000)
+                except:
+                    pass
+
+    # 2. Read AI notes review essences
+    ai_essences = ''
+    ai_dir = os.path.join(AI_DIR, full)
+    if os.path.isdir(ai_dir):
+        for fname in sorted(os.listdir(ai_dir)):
+            if fname.endswith('.md'):
+                fpath = os.path.join(ai_dir, fname)
+                try:
+                    with open(fpath, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    # Extract 复习精华 section
+                    if '## 复习精华' in content:
+                        essence = content.split('## 复习精华')[1].split('\n## ')[0]
+                        ai_essences += f'\n[{fname[:10]}] {essence[:500]}\n'
+                except:
+                    pass
+
+    # 3. Read AI problems
+    problems_text = ''
+    try:
+        with open(PROBLEMS_FILE, 'r') as f:
+            all_problems = json.load(f)
+        subj_problems = [p for p in all_problems if p.get('subject') == full]
+        for p in subj_problems[:10]:
+            problems_text += f'\n题: {p.get("question","")[:100]}\n解: {p.get("key_insight","")}\n'
+    except:
+        pass
+
+    # 4. Read weaknesses
+    weakness_text = ''
+    try:
+        wk = load_weaknesses()
+        subj_wk = [w for w in wk if full in w.get('text', '')]
+        if subj_wk:
+            weakness_text = '\n'.join(w['text'] for w in subj_wk)
+    except:
+        pass
+
+    # 5. Read hard flashcards
+    flashcard_text = ''
+    fc_short = {'高数II':'高数','有机化学':'有机','概率统计':'概统','大学物理':'大物',
+                '分析化学':'分析化学','普通生物学':'普生','AI基础':'AI基础','习思想':'习思想'}
+    try:
+        with open('/root/.flashcards-server.json', 'r') as f:
+            all_fc = json.load(f)
+        key = fc_short.get(full, full)
+        hard_fc = [c for c in all_fc if c.get('s') == key and c.get('difficulty') in ('hard', 'medium')]
+        for c in hard_fc[:15]:
+            flashcard_text += f'\nQ: {c["q"][:80]}\nA: {c["a"][:80]}\n'
+    except:
+        pass
+
+    # 6. AI compile
+    source_block = f"""【课程笔记】(截取)
+{course_content[:6000]}
+
+【AI对话复习精华】
+{ai_essences[:2000]}
+
+【AI题库错题】
+{problems_text[:2000]}
+
+【薄弱点追踪】
+{weakness_text[:500]}
+
+【高难度闪卡】
+{flashcard_text[:1500]}"""
+
+    exam_info = COURSE_EXAMS.get(full.replace('高数II','高等数学II').replace('高数II','高数II'), {})
+    target = exam_info.get('target', 80)
+    known = exam_info.get('known')
+    known_str = f'期中{known}分，' if known else ''
+
+    prompt = f"""你是期末冲刺复习专家。请为《{full}》生成一份考前精华文档。
+距期末{days_left}天。{known_str}目标{target}分。
+
+以下是该科目的所有学习资料（课程笔记、AI对话精华、错题、弱点、闪卡）：
+{source_block}
+
+请输出一份 Obsidian Markdown 格式的精华文档，包含：
+
+## 公式大全
+按章节整理所有核心公式（$...$格式），每个公式附一句话说明使用条件
+
+## 必考题型
+列出 5-8 个最可能出现的题型，每个题型：
+- 识别特征
+- 解题模板（步骤化）
+- 一道典型例题
+
+## 易错清单
+从错题和弱点中提炼 Top 10 易错点，用 > [!warning] callout 格式
+
+## 弱点专项突破
+针对薄弱知识点的专项训练建议（具体到做哪些题、看哪些笔记）
+
+## 考前速记卡
+10-15 条"最后一眼"式的速记条目（一行一条，适合考前10分钟翻阅）
+
+格式要求：
+- 所有数学公式用 $...$ 包裹
+- 方括号用 $\\left[...\\right]$
+- 不要用代码块包裹整体输出
+- 使用 Obsidian callout: > [!warning], > [!tip]-, > [!abstract]"""
+
+    payload = json.dumps({
+        'model': AI_MODEL,
+        'messages': [{'role': 'user', 'content': prompt}],
+        'max_tokens': 4000, 'temperature': 0.3
+    }).encode('utf-8')
+    req = urllib.request.Request(AI_API_URL, data=payload, headers={
+        'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+    })
+
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+        compiled = result['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        log(f'Compile failed for {full}: {e}')
+        return
+
+    if compiled.startswith('```'):
+        compiled = '\n'.join(compiled.split('\n')[1:])
+    if compiled.endswith('```'):
+        compiled = '\n'.join(compiled.split('\n')[:-1])
+
+    md = f"""---
+tags: [期末冲刺, {full}]
+created: {today}
+---
+
+# {full} 期末冲刺精华
+
+> 距期末 **{days_left}** 天 | {known_str}目标 {target} 分
+> 整合来源：课程笔记 + AI 对话精华 + 错题 + 弱点追踪 + 闪卡
+
+{compiled}
+"""
+
+    out_path = os.path.join(course_dir, '期末冲刺精华.md')
+    os.makedirs(course_dir, exist_ok=True)
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write(md)
+    subprocess.run(['chown', '-R', 'www-data:www-data', course_dir], capture_output=True)
+    log(f'Compiled: {out_path}')
+
+
+# ========== Smart Time Slot Scheduler ==========
+
+SCHEDULE_PY = {
+    0: [  # 周一
+        ('08:00', '09:40', '高等数学II'),
+        ('10:00', '11:40', '大学物理B'),
+    ],
+    1: [  # 周二
+        ('08:00', '09:40', '概率统计'),
+        ('10:00', '11:40', '高等数学II'),
+        ('12:00', '15:40', '有机化学实验'),
+    ],
+    2: [  # 周三
+        ('08:00', '09:40', '英汉口译'),
+        ('12:55', '15:40', '习近平新时代思想'),
+        ('16:00', '17:40', '网球'),
+    ],
+    3: [  # 周四
+        ('08:00', '09:40', '大学物理B'),
+        ('10:00', '11:40', '概率统计'),
+        ('12:00', '15:40', 'ET创新实验室'),
+        ('16:00', '17:40', '有机化学'),
+    ],
+    4: [  # 周五
+        ('08:00', '09:40', '分析化学'),
+        ('16:00', '17:40', '军事理论'),
+        ('18:00', '19:40', '人工智能基础A'),
+    ],
+    5: [  # 周六
+        ('10:00', '11:40', '新时代社会认知实践'),
+        ('18:00', '19:40', '大学物理实验'),
+    ],
+    6: [],  # 周日
+}
+
+def smart_timeslot(now, today):
+    """Push study recommendation for current free time slot"""
+    hour = now.hour
+    minute = now.minute
+    weekday = today.weekday()  # 0=Monday
+
+    if hour < 7 or hour >= 22:
+        return
+
+    courses = SCHEDULE_PY.get(weekday, [])
+
+    # Find current time slot
+    current_time = f'{hour:02d}:{minute:02d}'
+
+    # Check if we're in a class right now
+    for start, end, name in courses:
+        if start <= current_time <= end:
+            return  # In class, don't push
+
+    # Find the next class (to know how long the free slot is)
+    free_end = '22:00'
+    for start, end, name in sorted(courses):
+        if start > current_time:
+            free_end = start
+            break
+
+    free_minutes = (int(free_end[:2]) * 60 + int(free_end[3:])) - (hour * 60 + minute)
+    if free_minutes < 20:
+        return  # Too short
+
+    # Check if already pushed for this slot today
+    state_file = '/root/.timeslot-state.json'
+    try:
+        with open(state_file, 'r') as f:
+            state = json.load(f)
+    except:
+        state = {}
+
+    slot_key = f'{today}_{hour}'
+    if state.get(slot_key):
+        return  # Already pushed
+
+    # Decide what to study based on priorities
+    recommendations = []
+
+    # 1. Check spaced repetition due items
+    try:
+        with open(SPACED_FILE, 'r') as f:
+            sp_items = json.load(f)
+        due = [it for it in sp_items if it.get('status') == 'active' and it.get('next_review', '') <= today.isoformat()]
+        for it in due[:2]:
+            recommendations.append(f"复习: {it['text'][:25]}(间隔重复)")
+    except:
+        pass
+
+    # 2. Check today's Vikunja tasks
+    try:
+        today_tasks = []
+        for pid in [2, 3]:  # 期末复习 + 作业DDL
+            tasks = vikunja_get(f'/projects/{pid}/tasks')
+            if isinstance(tasks, list):
+                for t in tasks:
+                    if not t.get('done'):
+                        due = parse_date(t.get('due_date', ''))
+                        if due and due.date() == today:
+                            today_tasks.append(t)
+        today_tasks.sort(key=lambda t: -t.get('priority', 0))
+        for t in today_tasks[:2]:
+            recommendations.append(f"{t['title'][:30]}")
+    except:
+        pass
+
+    # 3. If still space, suggest weakness-based review
+    if len(recommendations) < 3:
+        try:
+            wk = load_weaknesses()
+            active_wk = [w for w in wk if w.get('status', 'active') == 'active']
+            for w in active_wk[:1]:
+                recommendations.append(f"巩固弱点: {w['text'][:25]}")
+        except:
+            pass
+
+    if not recommendations:
+        recommendations = ['自由复习时间，按计划推进']
+
+    # Format and push
+    free_h = free_minutes // 60
+    free_m = free_minutes % 60
+    time_str = f'{free_h}h{free_m}min' if free_h > 0 else f'{free_m}min'
+
+    msg_lines = [f'{i+1}. {r}' for i, r in enumerate(recommendations[:3])]
+    title = f'📚 {current_time}-{free_end} 空闲({time_str})'
+    body = '\n'.join(msg_lines)
+
+    bark_push(title, body, group='timeslot')
+
+    state[slot_key] = True
+    # Clean old entries (keep last 3 days)
+    cutoff = (today - datetime.timedelta(days=3)).isoformat()
+    state = {k: v for k, v in state.items() if k >= cutoff}
+    with open(state_file, 'w') as f:
+        json.dump(state, f)
+
+    log(f'Timeslot push: {title} | {body[:50]}')
+
+
 # ========== Main ==========
 
 def main():
@@ -2438,6 +2751,23 @@ def main():
     if mode == 'extract':
         today = now.date()
         batch_extract_problems(now, today)
+        log(f'{mode} done')
+        return
+
+    # compile mode: generate exam essentials document
+    if mode == 'compile':
+        today = now.date()
+        subject = sys.argv[2] if len(sys.argv) > 2 else None
+        if subject == 'all':
+            for subj in SUBJECT_MAP:
+                log(f'Compiling {subj}...')
+                compile_subject(now, today, subj)
+                import time; time.sleep(3)
+        elif subject:
+            compile_subject(now, today, subject)
+        else:
+            log('Usage: compile <subject|all>')
+            sys.exit(1)
         log(f'{mode} done')
         return
 
@@ -2479,6 +2809,8 @@ def main():
         proactive_review_generate(now, today)
     elif mode == 'evaluate':
         proactive_review_evaluate(now, today)
+    elif mode == 'timeslot':
+        smart_timeslot(now, today)
     else:
         log(f'Unknown mode: {mode}')
         sys.exit(1)

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>学习数据报告 - FXY</title>
+<style>
+:root{--bg:#0f0f1a;--card:#1a1a2e;--text:#e0e0e0;--text2:#888;--accent:#4361ee;--accent2:#7c8cf8;--border:#2a2a3e;--green:#2a9d8f;--red:#e76f51;--yellow:#e9c46a}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:16px}
+.container{max-width:800px;margin:0 auto}
+h1{font-size:22px;text-align:center;margin-bottom:4px;background:linear-gradient(135deg,#4361ee,#f72585);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.subtitle{text-align:center;color:var(--text2);margin-bottom:20px;font-size:13px}
+.back{display:inline-block;margin-bottom:12px;color:var(--accent2);text-decoration:none;font-size:13px}
+
+.panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px}
+.panel h3{font-size:14px;color:var(--text2);margin-bottom:14px}
+
+/* Bar chart */
+.bar-chart{display:flex;align-items:flex-end;gap:8px;height:120px;padding:0 4px}
+.bar-group{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px}
+.bar{width:100%;border-radius:4px 4px 0 0;min-height:2px;transition:height .5s}
+.bar.this-week{background:var(--accent)}
+.bar.last-week{background:rgba(67,97,238,.3)}
+.bar-label{font-size:10px;color:var(--text2);text-align:center;margin-top:4px;white-space:nowrap}
+.bar-value{font-size:10px;color:var(--text)}
+.legend{display:flex;gap:16px;justify-content:center;margin-top:10px;font-size:11px;color:var(--text2)}
+.legend span::before{content:'';display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.legend .tw::before{background:var(--accent)}
+.legend .lw::before{background:rgba(67,97,238,.3)}
+
+/* Ring chart */
+.rings{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.ring-item{text-align:center;width:90px}
+.ring{width:70px;height:70px;border-radius:50%;position:relative;margin:0 auto 6px}
+.ring-bg{position:absolute;inset:0;border-radius:50%;border:6px solid rgba(255,255,255,.06)}
+.ring-fill{position:absolute;inset:0;border-radius:50%;border:6px solid transparent;border-top-color:var(--accent);transform:rotate(-90deg)}
+.ring-center{position:absolute;inset:8px;border-radius:50%;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+.ring-label{font-size:11px;color:var(--text2)}
+
+/* Stats grid */
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.stat-item{text-align:center;padding:12px 8px;background:rgba(255,255,255,.02);border-radius:10px}
+.stat-item .num{font-size:22px;font-weight:800}
+.stat-item .label{font-size:11px;color:var(--text2);margin-top:2px}
+
+/* Heatmap */
+.heatmap{display:grid;grid-template-rows:repeat(7,1fr);grid-auto-flow:column;gap:2px;justify-content:center}
+.hm-cell{width:14px;height:14px;border-radius:2px;background:rgba(255,255,255,.04)}
+.hm-cell.l1{background:rgba(67,97,238,.2)}
+.hm-cell.l2{background:rgba(67,97,238,.4)}
+.hm-cell.l3{background:rgba(67,97,238,.6)}
+.hm-cell.l4{background:rgba(67,97,238,.85)}
+
+/* GPA */
+.gpa-trend{display:flex;gap:12px;justify-content:center}
+.gpa-chip{padding:10px 18px;border-radius:10px;text-align:center;font-weight:700}
+
+@media(max-width:600px){
+  .bar-chart{height:80px}
+  .rings{gap:8px}
+  .ring-item{width:70px}
+  .ring{width:56px;height:56px}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .hm-cell{width:11px;height:11px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<a href="index.html" class="back">&larr; 返回工具箱</a>
+<h1>📊 学习数据报告</h1>
+<p class="subtitle" id="period">加载中...</p>
+
+<!-- Study time bar chart -->
+<div class="panel">
+<h3>本周 vs 上周 学习时长（分钟）</h3>
+<div class="bar-chart" id="bar-chart"></div>
+<div class="legend"><span class="tw">本周</span><span class="lw">上周</span></div>
+</div>
+
+<!-- Problem mastery rings -->
+<div class="panel">
+<h3>各科题目掌握度</h3>
+<div class="rings" id="rings"></div>
+</div>
+
+<!-- Key metrics -->
+<div class="panel">
+<h3>关键指标</h3>
+<div class="stats-grid" id="stats"></div>
+</div>
+
+<!-- GPA prediction -->
+<div class="panel">
+<h3>GPA 预测</h3>
+<div class="gpa-trend" id="gpa"></div>
+<div style="text-align:center;margin-top:8px;font-size:12px;color:var(--text2)" id="gpa-advice"></div>
+</div>
+
+<!-- Heatmap -->
+<div class="panel">
+<h3>近4周学习热力图</h3>
+<div style="display:flex;justify-content:center"><div class="heatmap" id="heatmap"></div></div>
+</div>
+</div>
+
+<script>
+async function loadAll() {
+  const today = new Date();
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - today.getDay() + 1);
+  const lastWeekStart = new Date(weekStart);
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  document.getElementById('period').textContent =
+    `${weekStart.getMonth()+1}/${weekStart.getDate()} - ${today.getMonth()+1}/${today.getDate()} (距期末 ${Math.ceil((new Date('2026-06-22')-today)/864e5)} 天)`;
+
+  // 1. Study time bar chart
+  try {
+    const resp = await fetch('/api/study-stats');
+    const data = await resp.json();
+    const logs = data.logs || {};
+
+    const subjects = ['高数II','有机化学','概率统计','大学物理','分析化学','普通生物学'];
+    const shortNames = {'高数II':'高数','有机化学':'有机','概率统计':'概统','大学物理':'大物','分析化学':'分化','普通生物学':'普生'};
+
+    const thisWeek = {}, lastWeek = {};
+    for (const [date, subjs] of Object.entries(logs)) {
+      const d = new Date(date);
+      for (const [subj, mins] of Object.entries(subjs)) {
+        if (d >= weekStart) thisWeek[subj] = (thisWeek[subj]||0) + mins;
+        else if (d >= lastWeekStart) lastWeek[subj] = (lastWeek[subj]||0) + mins;
+      }
+    }
+
+    const maxVal = Math.max(1, ...Object.values(thisWeek), ...Object.values(lastWeek));
+    const chartEl = document.getElementById('bar-chart');
+    subjects.forEach(s => {
+      const tw = thisWeek[s] || 0;
+      const lw = lastWeek[s] || 0;
+      const short = shortNames[s] || s;
+      chartEl.innerHTML += `<div class="bar-group">
+        <div class="bar-value">${tw}</div>
+        <div style="display:flex;gap:2px;align-items:flex-end;height:100%;width:100%">
+          <div class="bar last-week" style="height:${Math.max(2,lw/maxVal*100)}%;flex:1"></div>
+          <div class="bar this-week" style="height:${Math.max(2,tw/maxVal*100)}%;flex:1"></div>
+        </div>
+        <div class="bar-label">${short}</div>
+      </div>`;
+    });
+  } catch(e) {}
+
+  // 2. Problem mastery rings
+  try {
+    const resp = await fetch('/api/problems');
+    const data = await resp.json();
+    const problems = data.problems || [];
+    const bySubj = {};
+    problems.forEach(p => {
+      if (!bySubj[p.subject]) bySubj[p.subject] = {total:0, mastered:0};
+      bySubj[p.subject].total++;
+      if (p.mastery >= 80) bySubj[p.subject].mastered++;
+    });
+
+    const ringsEl = document.getElementById('rings');
+    for (const [subj, d] of Object.entries(bySubj)) {
+      const pct = d.total > 0 ? Math.round(d.mastered/d.total*100) : 0;
+      const deg = pct * 3.6;
+      const color = pct >= 80 ? 'var(--green)' : pct >= 40 ? 'var(--yellow)' : 'var(--red)';
+      ringsEl.innerHTML += `<div class="ring-item">
+        <div class="ring">
+          <div class="ring-bg"></div>
+          <div class="ring-fill" style="border-top-color:${color};transform:rotate(-90deg);clip-path:${pct>50?'none':'inset(0 50% 0 0)'}"></div>
+          <div class="ring-center" style="color:${color}">${pct}%</div>
+        </div>
+        <div class="ring-label">${subj}<br>${d.mastered}/${d.total}</div>
+      </div>`;
+    }
+  } catch(e) {}
+
+  // 3. Key metrics
+  try {
+    const [probResp, fcResp] = await Promise.all([fetch('/api/problems'), fetch('/api/flashcards')]);
+    const probData = await probResp.json();
+    const fcData = await fcResp.json();
+    const statsEl = document.getElementById('stats');
+    const ps = probData.stats || {};
+    statsEl.innerHTML = `
+      <div class="stat-item"><div class="num" style="color:var(--accent2)">${ps.total||0}</div><div class="label">题库总题</div></div>
+      <div class="stat-item"><div class="num" style="color:var(--green)">${ps.mastered||0}</div><div class="label">已掌握</div></div>
+      <div class="stat-item"><div class="num" style="color:var(--red)">${ps.unreviewed||0}</div><div class="label">待复习</div></div>
+      <div class="stat-item"><div class="num" style="color:var(--accent2)">${fcData.total||0}</div><div class="label">闪卡总数</div></div>
+      <div class="stat-item"><div class="num" style="color:var(--yellow)">${fcData.cards?fcData.cards.length:0}</div><div class="label">待同步闪卡</div></div>
+      <div class="stat-item"><div class="num">${Math.ceil((new Date('2026-06-22')-new Date())/864e5)}</div><div class="label">距期末(天)</div></div>`;
+  } catch(e) {}
+
+  // 4. GPA prediction
+  try {
+    const resp = await fetch('/api/gpa-predict');
+    const data = await resp.json();
+    const gpa = data.gpa || {};
+    const gpaEl = document.getElementById('gpa');
+    const fmt = v => typeof v==='number'?v.toFixed(2):'-';
+    gpaEl.innerHTML = `
+      <div class="gpa-chip" style="background:rgba(231,111,81,.12);color:var(--red)">保守 ${fmt(gpa.conservative)}</div>
+      <div class="gpa-chip" style="background:rgba(233,196,106,.12);color:var(--yellow)">中等 ${fmt(gpa.moderate)}</div>
+      <div class="gpa-chip" style="background:rgba(42,157,143,.12);color:var(--green)">乐观 ${fmt(gpa.optimistic)}</div>`;
+    document.getElementById('gpa-advice').textContent = data.advice || '';
+  } catch(e) {}
+
+  // 5. Heatmap (last 28 days)
+  try {
+    const resp = await fetch('/api/study-stats');
+    const data = await resp.json();
+    const logs = data.logs || {};
+    const hmEl = document.getElementById('heatmap');
+    for (let i = 27; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0,10);
+      const dayData = logs[key];
+      let mins = 0;
+      if (dayData) mins = Object.values(dayData).reduce((a,b)=>a+b,0);
+      let lvl = '';
+      if (mins >= 180) lvl = 'l4';
+      else if (mins >= 120) lvl = 'l3';
+      else if (mins >= 60) lvl = 'l2';
+      else if (mins > 0) lvl = 'l1';
+      hmEl.innerHTML += `<div class="hm-cell ${lvl}" title="${key}: ${mins}min"></div>`;
+    }
+  } catch(e) {}
+}
+
+loadAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>模拟考试 - FXY</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{--bg:#0f0f1a;--card:#1a1a2e;--text:#e0e0e0;--text2:#888;--accent:#4361ee;--accent2:#7c8cf8;--border:#2a2a3e;--green:#2a9d8f;--red:#e76f51;--yellow:#e9c46a}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:16px}
+.container{max-width:800px;margin:0 auto}
+h1{font-size:22px;text-align:center;margin-bottom:4px;background:linear-gradient(135deg,#4361ee,#f72585);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.subtitle{text-align:center;color:var(--text2);margin-bottom:16px;font-size:13px}
+.back{display:inline-block;margin-bottom:12px;color:var(--accent2);text-decoration:none;font-size:13px}
+
+/* Setup */
+#setup{text-align:center}
+.subj-grid{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:20px 0}
+.subj-btn{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 20px;color:var(--text);font-size:15px;cursor:pointer;transition:all .2s}
+.subj-btn:hover{border-color:var(--accent);transform:translateY(-2px)}
+.subj-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.start-btn{margin-top:20px;padding:14px 40px;background:linear-gradient(135deg,#4361ee,#3a0ca3);color:#fff;border:none;border-radius:12px;font-size:16px;cursor:pointer;transition:all .2s}
+.start-btn:hover{transform:scale(1.03)}
+.start-btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* Timer */
+#timer-bar{display:none;position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:10;text-align:center;border-bottom:1px solid var(--border)}
+#timer{font-size:24px;font-weight:800;color:var(--accent2)}
+#timer.warning{color:var(--red)}
+#progress-text{font-size:12px;color:var(--text2);margin-top:4px}
+
+/* Questions */
+#exam{display:none}
+.question-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:14px}
+.q-header{display:flex;justify-content:space-between;margin-bottom:12px}
+.q-type{padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;background:rgba(67,97,238,.15);color:var(--accent2)}
+.q-points{font-size:13px;color:var(--text2)}
+.q-text{font-size:15px;line-height:1.7;margin-bottom:12px}
+.options{display:flex;flex-direction:column;gap:8px}
+.option{padding:10px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .2s;font-size:14px}
+.option:hover{border-color:var(--accent)}
+.option.selected{border-color:var(--accent);background:rgba(67,97,238,.1)}
+textarea.answer-input{width:100%;min-height:100px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text);font-size:14px;resize:vertical}
+textarea.answer-input:focus{border-color:var(--accent);outline:none}
+.submit-btn{display:block;margin:20px auto;padding:14px 40px;background:linear-gradient(135deg,var(--green),#264653);color:#fff;border:none;border-radius:12px;font-size:16px;cursor:pointer}
+
+/* Results */
+#results{display:none}
+.score-display{text-align:center;padding:30px;margin-bottom:20px}
+.score-num{font-size:56px;font-weight:800}
+.score-label{font-size:14px;color:var(--text2);margin-top:4px}
+.result-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px}
+.result-card.correct{border-left:3px solid var(--green)}
+.result-card.wrong{border-left:3px solid var(--red)}
+.r-score{font-weight:700;margin-bottom:6px}
+.r-comment{font-size:13px;color:var(--text2)}
+.r-solution{font-size:13px;margin-top:8px;padding:10px;background:rgba(42,157,143,.05);border-radius:8px}
+.weak-areas{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:16px}
+
+#loading{display:none;text-align:center;padding:60px}
+#loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top:3px solid var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media(max-width:600px){
+  .subj-btn{flex:1 1 40%;padding:10px 12px;font-size:14px}
+  #timer{font-size:20px}
+  .question-card{padding:14px}
+  .score-num{font-size:40px}
+  textarea.answer-input{min-height:80px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<a href="index.html" class="back">&larr; 返回工具箱</a>
+<h1>📝 模拟考试</h1>
+<p class="subtitle">AI 出题 + 计时 + 自动批改 + 分数预测</p>
+
+<div id="setup">
+<p style="color:var(--text2);margin-bottom:12px">选择科目</p>
+<div class="subj-grid" id="subjects"></div>
+<button class="start-btn" id="start-btn" onclick="startExam()" disabled>开始考试</button>
+</div>
+
+<div id="loading"><div class="spinner"></div><p>AI 正在出题...</p></div>
+
+<div id="timer-bar">
+<div id="timer">00:00</div>
+<div id="progress-text"></div>
+</div>
+
+<div id="exam"></div>
+
+<div id="results"></div>
+</div>
+
+<script>
+const SUBJECTS = ['高数II','有机化学','概率统计','大学物理','分析化学','普通生物学'];
+let selectedSubject = '';
+let examData = null;
+let timerInterval = null;
+let startTime = 0;
+
+// Setup
+const subjectsEl = document.getElementById('subjects');
+SUBJECTS.forEach(s => {
+  const btn = document.createElement('button');
+  btn.className = 'subj-btn';
+  btn.textContent = s;
+  btn.onclick = () => {
+    document.querySelectorAll('.subj-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedSubject = s;
+    document.getElementById('start-btn').disabled = false;
+  };
+  subjectsEl.appendChild(btn);
+});
+
+async function startExam() {
+  if (!selectedSubject) return;
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('loading').style.display = 'block';
+
+  try {
+    const resp = await fetch('/api/exam/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ subject: selectedSubject })
+    });
+    examData = await resp.json();
+    if (examData.error) throw new Error(examData.error);
+    renderExam();
+  } catch(e) {
+    document.getElementById('loading').innerHTML = '<p style="color:var(--red)">出题失败: ' + e.message + '</p>';
+  }
+}
+
+function renderExam() {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('timer-bar').style.display = 'block';
+  document.getElementById('exam').style.display = 'block';
+
+  // Start timer
+  startTime = Date.now();
+  timerInterval = setInterval(updateTimer, 1000);
+
+  const examEl = document.getElementById('exam');
+  let html = '';
+  examData.questions.forEach((q, i) => {
+    html += `<div class="question-card" id="q-${i}">
+      <div class="q-header">
+        <span class="q-type">${q.type} · 第${q.id}题</span>
+        <span class="q-points">${q.points}分</span>
+      </div>
+      <div class="q-text">${q.question}</div>`;
+
+    if (q.type === '选择' && q.options) {
+      html += '<div class="options">';
+      q.options.forEach((opt, j) => {
+        html += `<div class="option" onclick="selectOption(${i},${j},this)">${opt}</div>`;
+      });
+      html += '</div>';
+    } else {
+      html += `<textarea class="answer-input" id="ans-${i}" placeholder="在此作答..."></textarea>`;
+    }
+    html += '</div>';
+  });
+
+  html += '<button class="submit-btn" onclick="submitExam()">交卷</button>';
+  examEl.innerHTML = html;
+  renderMath();
+}
+
+function selectOption(qIdx, optIdx, el) {
+  const card = document.getElementById('q-' + qIdx);
+  card.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  el.dataset.selected = optIdx;
+}
+
+function updateTimer() {
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const min = Math.floor(elapsed / 60);
+  const sec = elapsed % 60;
+  const timerEl = document.getElementById('timer');
+  timerEl.textContent = `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  if (min >= 90) timerEl.classList.add('warning');
+  document.getElementById('progress-text').textContent = `${selectedSubject} · ${examData.questions.length}题 · ${examData.total_points || 100}分`;
+}
+
+async function submitExam() {
+  if (!confirm('确认交卷？')) return;
+  clearInterval(timerInterval);
+
+  // Collect answers
+  const answers = examData.questions.map((q, i) => {
+    if (q.type === '选择') {
+      const selected = document.querySelector(`#q-${i} .option.selected`);
+      return selected ? selected.textContent : '';
+    }
+    const textarea = document.getElementById('ans-' + i);
+    return textarea ? textarea.value : '';
+  });
+
+  document.getElementById('exam').style.display = 'none';
+  document.getElementById('timer-bar').style.display = 'none';
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('loading').querySelector('p').textContent = 'AI 正在批改...';
+
+  try {
+    const resp = await fetch('/api/exam/grade', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ exam_id: examData.exam_id, answers })
+    });
+    const grading = await resp.json();
+    if (grading.error) throw new Error(grading.error);
+    renderResults(grading);
+  } catch(e) {
+    document.getElementById('loading').innerHTML = '<p style="color:var(--red)">批改失败: ' + e.message + '</p>';
+  }
+}
+
+function renderResults(grading) {
+  document.getElementById('loading').style.display = 'none';
+  const resultsEl = document.getElementById('results');
+  resultsEl.style.display = 'block';
+
+  const pct = grading.percentage || Math.round(grading.total_score / (grading.max_score || 100) * 100);
+  const color = pct >= 85 ? 'var(--green)' : pct >= 60 ? 'var(--yellow)' : 'var(--red)';
+  const elapsed = Math.floor((Date.now() - startTime) / 60000);
+
+  let html = `<div class="score-display">
+    <div class="score-num" style="color:${color}">${grading.total_score}/${grading.max_score || 100}</div>
+    <div class="score-label">${pct}% · 用时 ${elapsed} 分钟</div>
+    <div style="margin-top:12px;font-size:14px;color:var(--text2)">${grading.advice || ''}</div>
+  </div>`;
+
+  // Per-question results
+  (grading.results || []).forEach((r, i) => {
+    const q = examData.questions[i] || {};
+    const sol = (grading.solutions || [])[i] || {};
+    html += `<div class="result-card ${r.correct ? 'correct' : 'wrong'}">
+      <div class="r-score">${r.correct ? '✅' : '❌'} 第${r.id}题 · ${r.score}/${r.max}分</div>
+      <div class="q-text" style="font-size:13px;margin:6px 0">${q.question || ''}</div>
+      <div class="r-comment">${r.comment || ''}</div>
+      <div class="r-solution"><strong>参考解答：</strong>${sol.solution || sol.answer || ''}</div>
+    </div>`;
+  });
+
+  // Weak areas
+  if (grading.weak_areas && grading.weak_areas.length) {
+    html += '<div class="weak-areas"><strong>薄弱知识点：</strong><ul>';
+    grading.weak_areas.forEach(w => { html += `<li>${w}</li>`; });
+    html += '</ul></div>';
+  }
+
+  html += '<button class="start-btn" style="margin-top:20px" onclick="location.reload()">再来一套</button>';
+  resultsEl.innerHTML = html;
+  renderMath();
+}
+
+function renderMath() {
+  if (window.renderMathInElement) {
+    setTimeout(() => {
+      document.querySelectorAll('.q-text,.r-solution,.option,.answer-input').forEach(el => {
+        renderMathInElement(el, {
+          delimiters: [{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],
+          throwOnError: false
+        });
+      });
+    }, 200);
+  }
+}
+</script>
+</body>
+</html>

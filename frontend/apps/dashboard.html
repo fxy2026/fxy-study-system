@@ -75,6 +75,16 @@ footer{text-align:center;padding:30px 0;font-size:12px;color:var(--text2)}
 .container{padding:12px}
 header h1{font-size:22px}
 }
+/* mobile-fix */
+@media(max-width:600px){
+  .countdown-number{font-size:32px!important}
+  .heatmap-cell{width:12px!important;height:12px!important}
+  .gpa-row{flex-direction:column}
+  .gpa-row input{width:100%}
+  .timer-section{padding:12px}
+  .section-title{font-size:14px}
+}
+
 </style>
 </head>
 <body>
@@ -144,7 +154,7 @@ header h1{font-size:22px}
 
 <script>
 // --- Password ---
-const PASS_HASH = 'YOUR_PASSWORD';
+const PASS_HASH = 'Fxy@notes2026';
 function doLogin(){
   const v = document.getElementById('pwd-input').value;
   if(v === PASS_HASH){

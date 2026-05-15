@@ -1609,6 +1609,146 @@ ${dataBlock}
     return;
   }
 
+  // Exam Simulation API
+  if (req.method === 'POST' && req.url === '/api/exam/generate') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { subject, question_count = 8 } = JSON.parse(body);
+        if (!subject) { res.writeHead(400, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'}); res.end('{"error":"subject required"}'); return; }
+
+        const SUBJECT_FULL = {'高数':'高数II','有机':'有机化学','概统':'概率统计','大物':'大学物理','分化':'分析化学','普生':'普通生物学','高数II':'高数II','有机化学':'有机化学','概率统计':'概率统计','大学物理':'大学物理','分析化学':'分析化学'};
+        const COURSE_FOLDER = {'高数II':'高数II','有机化学':'有机化学','概率统计':'概率统计','大学物理':'大学物理','分析化学':'分析化学','普通生物学':'普通生物学','AI基础':'人工智能基础','习思想':'习思想'};
+        const fullSubject = SUBJECT_FULL[subject] || subject;
+
+        // Gather context
+        let context = '';
+        const cDir = path.join(VAULT_DIR, '课程', COURSE_FOLDER[fullSubject] || fullSubject);
+        if (fs.existsSync(cDir)) {
+          for (const fn of ['期末复习.md', '典型题型与解法.md']) {
+            const fp = path.join(cDir, fn);
+            if (fs.existsSync(fp)) context += fs.readFileSync(fp, 'utf-8').slice(0, 3000) + '\n';
+          }
+        }
+
+        // Existing problems for reference
+        try {
+          const probs = JSON.parse(fs.readFileSync('/root/.ai-problems.json', 'utf-8'));
+          const subProbs = probs.filter(p => p.subject === fullSubject).slice(0, 5);
+          subProbs.forEach(p => { context += `\n参考题: ${p.question.slice(0, 100)}\n`; });
+        } catch(e) {}
+
+        const examPrompt = [
+          { role: 'system', content: `你是大学考试出题专家。为《${fullSubject}》生成一套模拟试卷。
+
+参考资料:
+${context.slice(0, 5000)}
+
+要求:
+1. 共${question_count}道题，结构合理:
+   - 2道选择题（4选1，每题5分）
+   - 2道填空题（每题5分）
+   - 2道计算题（每题15分）
+   - 1道证明/推导题（20分）
+   - 1道综合应用题（20分）
+2. 难度分布: 30%基础 + 50%中等 + 20%难
+3. 数学公式用 $...$，方括号用 $\\left[...\\right]$
+
+返回JSON:
+{"total_points":100,"questions":[
+  {"id":1,"type":"选择","points":5,"question":"题目","options":["A...","B...","C...","D..."],"answer":"A","solution":"解析"},
+  {"id":2,"type":"填空","points":5,"question":"题目___","answer":"答案","solution":"解析"},
+  {"id":3,"type":"计算","points":15,"question":"题目","answer":"","solution":"完整解题步骤"},
+  ...
+]}
+只返回JSON。` },
+          { role: 'user', content: `请为${fullSubject}出一套模拟试卷。` }
+        ];
+
+        const raw = await callModelJSON(examPrompt, 'deepseek-v3.2');
+        let cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        let exam;
+        try { exam = JSON.parse(cleaned); }
+        catch(e) { const m = cleaned.match(/\{[\s\S]*\}/); if(m) exam = JSON.parse(m[0]); else throw e; }
+
+        const examId = Date.now().toString();
+        exam.exam_id = examId;
+        exam.subject = fullSubject;
+        exam.created = new Date().toISOString();
+
+        // Save exam for grading
+        const EXAM_FILE = '/root/.exam-cache.json';
+        let exams = {};
+        try { exams = JSON.parse(fs.readFileSync(EXAM_FILE, 'utf-8')); } catch(e) {}
+        exams[examId] = exam;
+        fs.writeFileSync(EXAM_FILE, JSON.stringify(exams));
+
+        res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+        // Don't send answers to client
+        const clientExam = { ...exam, questions: exam.questions.map(q => ({ ...q, answer: undefined, solution: undefined })) };
+        res.end(JSON.stringify(clientExam));
+      } catch(e) {
+        console.error('exam generate error:', e);
+        res.writeHead(500, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/exam/grade') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { exam_id, answers } = JSON.parse(body);
+        const EXAM_FILE = '/root/.exam-cache.json';
+        const exams = JSON.parse(fs.readFileSync(EXAM_FILE, 'utf-8'));
+        const exam = exams[exam_id];
+        if (!exam) { res.writeHead(404, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'}); res.end('{"error":"exam not found"}'); return; }
+
+        // Build grading prompt
+        let gradingInput = '';
+        exam.questions.forEach((q, i) => {
+          const userAnswer = (answers && answers[i]) || '(未作答)';
+          gradingInput += `\n第${q.id}题 (${q.type}, ${q.points}分)\n题目: ${q.question}\n标准答案: ${q.answer || q.solution}\n学生答案: ${userAnswer}\n`;
+        });
+
+        const gradePrompt = [
+          { role: 'system', content: `你是阅卷老师。逐题批改以下试卷，给出每题得分和简短点评。
+
+${gradingInput}
+
+返回JSON:
+{"total_score":数字,"max_score":${exam.total_points || 100},"percentage":数字,"results":[
+  {"id":1,"score":得分,"max":满分,"correct":true/false,"comment":"点评"},
+  ...
+],"weak_areas":["薄弱知识点1","薄弱知识点2"],"advice":"一句话建议"}
+只返回JSON。` },
+          { role: 'user', content: '请批改这份试卷。' }
+        ];
+
+        const raw = await callModelJSON(gradePrompt, 'deepseek-v3.2');
+        let cleaned = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        let grading;
+        try { grading = JSON.parse(cleaned); }
+        catch(e) { const m = cleaned.match(/\{[\s\S]*\}/); if(m) grading = JSON.parse(m[0]); else throw e; }
+
+        // Attach full solutions for review
+        grading.solutions = exam.questions.map(q => ({ id: q.id, answer: q.answer, solution: q.solution }));
+
+        res.writeHead(200, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+        res.end(JSON.stringify(grading));
+      } catch(e) {
+        console.error('exam grade error:', e);
+        res.writeHead(500, {'Content-Type':'application/json','Access-Control-Allow-Origin':'*'});
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // Problems API (AI-extracted problem bank)
   if (req.url.startsWith('/api/problems')) {
     const PROBLEMS_FILE = '/root/.ai-problems.json';

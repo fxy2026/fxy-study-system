@@ -160,6 +160,17 @@ body {
 }
 .input-area button:disabled { opacity: 0.4; cursor: not-allowed; }
 .typing { color: #888; font-size: 13px; font-style: italic; }
+/* mobile-fix */
+@media(max-width:600px){
+  .container,.chat-container{max-width:100%;padding:0 8px}
+  .input-area{flex-direction:column}
+  .input-area input,.input-area textarea{width:100%}
+  .input-area button{width:100%;min-height:44px}
+  .task-card{padding:12px}
+  h1{font-size:20px}
+  .project-tags{flex-wrap:wrap}
+}
+
 </style>
 </head>
 <body>

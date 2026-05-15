@@ -595,6 +595,11 @@ tags: [早报]
         md += "\n"
 
     # Exam countdown table
+    # Video course progress
+    video_text = get_video_progress_text(today.isoformat())
+    if video_text:
+        md += video_text + "\n"
+
     md += "### 📊 期末冲刺\n\n"
     md += "| 科目 | 学分 | 倒计时 | 目标 | 期末需 |\n"
     md += "|------|------|--------|------|--------|\n"
@@ -710,6 +715,86 @@ tags: [早报]
 
     write_report(today, '早报', md)
 
+    # Update vault index
+    update_vault_index(today)
+
+
+def update_vault_index(today):
+    """Auto-update vault navigation index"""
+    days_left = (EXAM_DATE - today).days
+
+    # Count files per directory
+    counts = {}
+    for d in ['AI笔记', 'AI题库', '课程', '每日笔记', '网页笔记']:
+        dp = os.path.join(VAULT_DIR, d)
+        if os.path.isdir(dp):
+            counts[d] = sum(1 for r, ds, fs in os.walk(dp) for f in fs if f.endswith('.md'))
+        else:
+            counts[d] = 0
+
+    # Recent AI notes (last 3 days)
+    recent_ai = []
+    for delta in range(0, 3):
+        day = today - datetime.timedelta(days=delta)
+        day_str = day.isoformat()
+        if os.path.isdir(AI_DIR):
+            for root, dirs, files in os.walk(AI_DIR):
+                for fname in files:
+                    if fname.startswith(day_str) and fname.endswith('.md'):
+                        subj = os.path.basename(root)
+                        title = fname.replace('.md', '').replace(f'{day_str}_', '')
+                        rel = os.path.relpath(os.path.join(root, fname), VAULT_DIR).replace('\\', '/').replace('.md', '')
+                        recent_ai.append(f'  - [[{rel}|{title}]] ({subj})')
+
+    index_md = f"""---
+tags: [导航]
+---
+
+# 📍 Vault 导航
+
+> 距期末 **{days_left}** 天 | 笔记 {sum(counts.values())} 篇 | 自动更新于 {today}
+
+## 🔥 快捷入口
+
+- [今日聚焦](https://kb.xpy.me/apps/today.html) — 手机端极简入口
+- [学习指挥中心](https://kb.xpy.me/apps/) — 完整数据面板
+- [模拟考试](https://kb.xpy.me/apps/exam.html) — AI 出题 + 批改
+- [弱点分析](https://kb.xpy.me/apps/weakness.html) — 知识盲区 + 覆盖度
+
+## 📚 期末冲刺精华（考前翻这个）
+[[课程/高数II/期末冲刺精华|高数II]] · [[课程/有机化学/期末冲刺精华|有机化学]] · [[课程/概率统计/期末冲刺精华|概率统计]] · [[课程/大学物理/期末冲刺精华|大学物理]] · [[课程/分析化学/期末冲刺精华|分析化学]] · [[课程/普通生物学/期末冲刺精华|普通生物学]] · [[课程/习思想/期末冲刺精华|习思想]] · [[课程/人工智能基础/期末冲刺精华|AI基础]]
+
+## 📁 目录概览
+| 目录 | 笔记数 | 说明 |
+|------|--------|------|
+| 课程/ | {counts.get('课程',0)} | 8 科课程笔记 + 闪卡 |
+| AI笔记/ | {counts.get('AI笔记',0)} | Gemini 对话自动保存 |
+| AI题库/ | {counts.get('AI题库',0)} | 自动提取的题目 |
+| 每日笔记/ | {counts.get('每日笔记',0)} | 早报/晚报/学习回顾 |
+| 网页笔记/ | {counts.get('网页笔记',0)} | 网页剪藏 |
+
+"""
+
+    if recent_ai:
+        index_md += "## 📝 最近 AI 笔记\n\n" + '\n'.join(recent_ai[:10]) + '\n\n'
+
+    index_md += """## 🛠 Memos 快捷指令
+```
+#学了 高数 45min     → 记录学习时长
+#看课 分化 P5        → 记录网课进度
+#查 格林公式         → 3秒笔记检索
+#出题 高数积分       → AI 自动出题
+#问 SN2机理         → AI 自动回答
+```
+"""
+
+    index_path = os.path.join(VAULT_DIR, '导航.md')
+    with open(index_path, 'w', encoding='utf-8') as f:
+        f.write(index_md)
+    subprocess.run(['chown', 'www-data:www-data', index_path], capture_output=True)
+    log('Vault index updated')
+
+
 # ========== Evening Report ==========
 
 def evening_report(now, today):
@@ -776,23 +861,36 @@ tags: [晚报]
             md += fmt_task(t) + "\n"
         md += "\n"
 
-    # Today's study log with weekly comparison
+    # Today's study log with weekly comparison + video time
     memos_study_log(now, today)  # process any new #学了 memos
     study = get_study_summary(today.isoformat())
-    if study:
+    video_min = get_video_study_minutes(today.isoformat())
+
+    # Video progress section
+    vid_text = get_video_progress_text(today.isoformat())
+    if vid_text:
+        md += vid_text + "\n"
+
+    if study or video_min:
         md += "### 📖 今日学习记录\n\n"
+        study_total = (study['total'] if study else 0) + video_min
+        study_count = (study['count'] if study else 0)
         # Weekly comparison
         last_week_same_day = (today - datetime.timedelta(days=7)).isoformat()
         lw_study = get_study_summary(last_week_same_day)
-        if lw_study:
-            diff = study['total'] - lw_study['total']
+        lw_total = (lw_study['total'] if lw_study else 0)
+        if lw_total > 0:
+            diff = study_total - lw_total
             arrow = '📈' if diff > 0 else ('📉' if diff < 0 else '➡️')
-            md += f"> 总计 **{study['total']}** 分钟 ({study['count']}次) {arrow} 上周同日 {lw_study['total']}min ({'+' if diff >= 0 else ''}{diff}min)\n\n"
+            md += f"> 总计 **{study_total}** 分钟 ({study_count}次打卡{' + 看课' if video_min else ''}) {arrow} 上周同日 {lw_total}min ({'+' if diff >= 0 else ''}{diff}min)\n\n"
         else:
-            md += f"> 总计 **{study['total']}** 分钟 ({study['count']}次打卡)\n\n"
-        for subj, mins in sorted(study['by_subject'].items(), key=lambda x: -x[1]):
-            bar = '█' * (mins // 15) + '░' * max(0, 4 - mins // 15)
-            md += f"- {subj}: {mins}min {bar}\n"
+            md += f"> 总计 **{study_total}** 分钟 ({study_count}次打卡{f' + 看课约{video_min}min' if video_min else ''})\n\n"
+        if study:
+            for subj, mins in sorted(study['by_subject'].items(), key=lambda x: -x[1]):
+                bar = '█' * (mins // 15) + '░' * max(0, 4 - mins // 15)
+                md += f"- {subj}: {mins}min {bar}\n"
+        if video_min:
+            md += f"- 📺 网课观看: 约{video_min}min\n"
         md += "\n"
 
     total = len(overdue) + len(undone_today) + len(due_tomorrow) + len(due_this_week) + len(due_this_month)
@@ -2441,6 +2539,219 @@ tags: [AI题库, {subj}]
     log(f'Batch extraction done: {total_extracted} problems from {len(existing_sources)} notes')
 
 
+# ========== Video Course Tracking (#看课) ==========
+
+VIDEO_FILE = '/root/.course-videos.json'
+
+def load_video_courses():
+    try:
+        with open(VIDEO_FILE, 'r') as f:
+            return json.load(f)
+    except:
+        return {"courses": {}}
+
+def save_video_courses(data):
+    with open(VIDEO_FILE, 'w') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def memos_video_watch(now, today):
+    """Handle #看课 tags in Memos — track video course progress"""
+    import re as _re
+    processed_file = '/root/.video-processed.json'
+    try:
+        with open(processed_file, 'r') as f:
+            processed = set(json.load(f))
+    except:
+        processed = set()
+
+    try:
+        req = urllib.request.Request(
+            f'{MEMOS_API}/memos?pageSize=30',
+            headers={'Authorization': f'Bearer {MEMOS_TOKEN}'}
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+    except:
+        return
+
+    SUBJ_ALIAS = {
+        '高数': '高数II', '有机': '有机化学', '概统': '概率统计', '大物': '大学物理',
+        '分化': '分析化学', '分析': '分析化学', '普生': '普通生物学', 'ai': 'AI基础',
+        '物理': '大学物理', '数学': '高数II', '生物': '普通生物学',
+    }
+
+    courses_data = load_video_courses()
+    logged = 0
+
+    for m in data.get('memos', []):
+        memo_id = m.get('name', '')
+        content = m.get('content', '').strip()
+        if '#看课' not in content or memo_id in processed or '✅' in content:
+            continue
+
+        # Parse: #看课 分化 P5 笔记内容
+        text = content.replace('#看课', '').strip()
+        # Extract subject
+        subject = ''
+        for alias, full in SUBJ_ALIAS.items():
+            if text.lower().startswith(alias):
+                subject = full
+                text = text[len(alias):].strip()
+                break
+
+        if not subject:
+            # Try first word
+            parts = text.split(None, 1)
+            if parts:
+                subject = SUBJ_ALIAS.get(parts[0], parts[0])
+                text = parts[1] if len(parts) > 1 else ''
+
+        # Extract episode number
+        ep_match = _re.search(r'[Pp](\d+)', text)
+        if not ep_match:
+            ep_match = _re.search(r'(\d+)', text)
+        if not ep_match:
+            processed.add(memo_id)
+            continue
+
+        episode = int(ep_match.group(1))
+        # Extract note (everything after episode number)
+        note = text[ep_match.end():].strip().lstrip(':.，、 ')
+
+        # Update progress
+        if subject not in courses_data['courses']:
+            courses_data['courses'][subject] = {
+                'title': subject + '网课',
+                'url': '',
+                'total': 0,
+                'watched': [],
+                'notes': {},
+                'source': 'unknown'
+            }
+
+        course = courses_data['courses'][subject]
+        if episode not in course['watched']:
+            course['watched'].append(episode)
+            course['watched'].sort()
+        if note:
+            course['notes'][str(episode)] = note
+        # Auto-detect total if not set
+        if course['total'] < episode:
+            course['total'] = episode
+
+        save_video_courses(courses_data)
+
+        # Reply to memo
+        watched_count = len(course['watched'])
+        total = course['total']
+        pct = int(watched_count / total * 100) if total > 0 else 0
+        reply = f'\n\n---\n✅ 已记录 {subject} P{episode} ({watched_count}/{total}集 {pct}%)'
+        if note:
+            reply += f'\n📝 {note[:50]}'
+
+        try:
+            new_content = content + reply
+            update_payload = json.dumps({'content': new_content}).encode('utf-8')
+            update_req = urllib.request.Request(
+                f'{MEMOS_API}/{memo_id}',
+                data=update_payload, method='PATCH',
+                headers={'Authorization': f'Bearer {MEMOS_TOKEN}', 'Content-Type': 'application/json'}
+            )
+            with urllib.request.urlopen(update_req, timeout=10) as resp:
+                resp.read()
+        except:
+            pass
+
+        # Create next episode task (if not already exists)
+        next_ep = episode + 1
+        if total == 0 or next_ep <= total:
+            existing_norms, _ = load_existing_titles()
+            task_title = f'看{subject}网课 P{next_ep}'
+            if not is_task_duplicate(task_title, existing_norms):
+                vikunja_create_task(task_title, project_id=2, due_date=today + datetime.timedelta(days=1))
+
+        # Append to vault course notes
+        vault_note_path = os.path.join(COURSE_DIR, SUBJECT_MAP.get(subject, subject), '网课笔记.md')
+        try:
+            if not os.path.exists(vault_note_path):
+                header = f"---\ntags: [网课, {subject}]\n---\n\n# {subject} 网课笔记\n\n> {course.get('title', subject)} · 进度追踪\n\n"
+                os.makedirs(os.path.dirname(vault_note_path), exist_ok=True)
+                with open(vault_note_path, 'w', encoding='utf-8') as f:
+                    f.write(header)
+            entry = f"\n## P{episode} - {today}\n\n"
+            if note:
+                entry += f"{note}\n\n"
+            else:
+                entry += "（已观看）\n\n"
+            with open(vault_note_path, 'a', encoding='utf-8') as f:
+                f.write(entry)
+            subprocess.run(['chown', '-R', 'www-data:www-data', os.path.dirname(vault_note_path)], capture_output=True)
+        except:
+            pass
+
+        processed.add(memo_id)
+        logged += 1
+        log(f'Video: {subject} P{episode} ({watched_count}/{total})')
+
+    with open(processed_file, 'w') as f:
+        json.dump(list(processed)[-500:], f)
+
+    if logged:
+        log(f'Video tracking: {logged} episodes recorded')
+
+
+def get_video_progress_text(today_str=None):
+    """Get formatted video progress for morning/evening report"""
+    courses_data = load_video_courses()
+    if not courses_data.get('courses'):
+        return ''
+
+    lines = ['### 📺 网课进度\n']
+    for subject, course in courses_data['courses'].items():
+        episodes = course.get('episodes', {})
+        completed = sum(1 for e in episodes.values() if e.get('completed'))
+        total = course.get('total', 0)
+        current_ep = course.get('current_episode', 1)
+        current_pct = episodes.get(str(current_ep), {}).get('progress', 0)
+        title = course.get('title', subject)
+
+        # Overall progress bar
+        overall_pct = int(completed / total * 100) if total > 0 else 0
+        bar = '█' * (overall_pct // 10) + '░' * (10 - overall_pct // 10)
+
+        line = f'- **{subject}**（{title}）: P{current_ep} 看到{current_pct}% | {bar} {completed}/{total}集'
+
+        # Today's activity
+        if today_str:
+            today_eps = [ep for ep, info in episodes.items() if info.get('date') == today_str]
+            if today_eps:
+                line += f' | 今日看了 P{"、P".join(today_eps)}'
+
+        # Recommendation
+        if current_pct < 90:
+            line += f'\n  → 继续看 P{current_ep}（还剩 {100-current_pct}%）'
+        elif total > 0 and current_ep < total:
+            line += f'\n  → 下一集 P{current_ep + 1}'
+
+        lines.append(line)
+    lines.append('')
+    return '\n'.join(lines)
+
+
+def get_video_study_minutes(today_str):
+    """Estimate study minutes from video watching today (for study log integration)"""
+    courses_data = load_video_courses()
+    total_min = 0
+    for subject, course in courses_data.get('courses', {}).items():
+        episodes = course.get('episodes', {})
+        avg_duration = 60  # assume 60 min per episode
+        for ep, info in episodes.items():
+            if info.get('date') == today_str:
+                pct = info.get('progress', 0)
+                total_min += int(avg_duration * pct / 100)
+    return total_min
+
+
 # ========== Fatigue Detection ==========
 
 FATIGUE_KEYWORDS = ['好累', '累了', '学不动', '崩了', '不想学', '太难了', '放弃', '焦虑', '烦', '头疼', '困死', '摆烂', '不行了', '学吐了']
@@ -2870,6 +3181,22 @@ def smart_timeslot(now, today):
         except:
             pass
 
+    # 4. Suggest continuing video if unfinished episode
+    if len(recommendations) < 3:
+        try:
+            vdata = load_video_courses()
+            for subj, course in vdata.get('courses', {}).items():
+                ep = course.get('current_episode', 1)
+                eps = course.get('episodes', {})
+                ep_info = eps.get(str(ep), {})
+                if ep_info.get('progress', 0) > 0 and not ep_info.get('completed'):
+                    remaining = 100 - ep_info['progress']
+                    est_min = int(remaining * 0.6)  # ~60min per episode
+                    recommendations.append(f"继续看{subj}网课 P{ep}(还剩{remaining}%≈{est_min}min)")
+                    break
+        except:
+            pass
+
     if not recommendations:
         recommendations = ['自由复习时间，按计划推进']
 
@@ -2954,6 +3281,7 @@ def main():
         memos_qa(now, today)
         memos_study_log(now, today)
         memos_lookup(now, today)
+        memos_video_watch(now, today)
         fatigue_check(now, today)
         check_achievements(now, today)
     elif mode == 'bedtime':

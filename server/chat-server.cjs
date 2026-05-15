@@ -1749,6 +1749,227 @@ ${gradingInput}
     return;
   }
 
+  // Web Clipper API — save any webpage to Obsidian
+  if (req.method === 'POST' && req.url === '/api/clip') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { url: pageUrl, title, content, selection, subject: reqSubject, options = {} } = JSON.parse(body);
+        if (!content && !selection) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: 'content or selection required' }));
+          return;
+        }
+
+        const text = selection || content || '';
+        const noteTitle = title || 'Web Clip';
+
+        // 1. Detect subject
+        let finalSubject = reqSubject;
+        if (!finalSubject || finalSubject === 'auto') {
+          const detectPrompt = [
+            { role: 'system', content: '你是学科分类器。根据内容返回最匹配的学科名。只返回以下之一：高数II、有机化学、概率统计、大学物理、分析化学、普通生物学、AI基础、习思想、其他。只返回学科名。' },
+            { role: 'user', content: text.slice(0, 1500) }
+          ];
+          try { finalSubject = (await callModelJSON(detectPrompt, 'deepseek-v3.2')).trim().replace(/["、。]/g, ''); }
+          catch(e) { finalSubject = '其他'; }
+        }
+
+        // 2. AI summary + key points
+        let summary = '', keyPoints = [];
+        if (options.summary !== false) {
+          const orgPrompt = [
+            { role: 'system', content: '你是笔记整理助手。根据以下网页内容，返回 JSON：{"summary": "一句话摘要", "key_points": ["要点1", "要点2"]}。只返回 JSON。' },
+            { role: 'user', content: text.slice(0, 3000) }
+          ];
+          try {
+            const raw = await callModelJSON(orgPrompt, 'deepseek-v3.2');
+            const parsed = JSON.parse(raw.replace(/```json\n?/g, '').replace(/```/g, '').trim());
+            summary = parsed.summary || '';
+            keyPoints = parsed.key_points || [];
+          } catch(e) {}
+        }
+
+        // 3. Find related notes
+        let relatedLinks = '';
+        if (options.link_notes !== false) {
+          const results = searchNotes(text.slice(0, 200), 3);
+          if (results.length > 0) {
+            relatedLinks = '\n## 关联笔记\n\n';
+            results.forEach(r => { relatedLinks += `- [[${r.title}]]\n`; });
+          }
+        }
+
+        // 4. Build markdown
+        const now = new Date();
+        const dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+        const timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+
+        let md = '---\n';
+        md += `source: web-clip\n`;
+        md += `url: "${pageUrl || ''}"\n`;
+        md += `subject: ${finalSubject}\n`;
+        md += `created: ${dateStr} ${timeStr}\n`;
+        md += `tags: [网页笔记, ${finalSubject}]\n`;
+        if (summary) md += `summary: "${summary}"\n`;
+        md += '---\n\n';
+        md += `# ${noteTitle}\n\n`;
+        if (pageUrl) md += `> [!info] 来源\n> [原文链接](${pageUrl}) · 剪藏于 ${dateStr}\n\n`;
+        if (summary) md += `## 摘要\n\n${summary}\n\n`;
+        if (keyPoints.length > 0) {
+          md += '## 要点\n\n';
+          keyPoints.forEach(p => { md += `- ${p}\n`; });
+          md += '\n';
+        }
+        md += '## 正文\n\n';
+        md += (selection || content) + '\n';
+        if (relatedLinks) md += relatedLinks;
+
+        // 5. Save to vault
+        const clipDir = path.join(VAULT_DIR, '网页笔记', finalSubject);
+        if (!fs.existsSync(clipDir)) fs.mkdirSync(clipDir, { recursive: true });
+        const safeTitle = noteTitle.replace(/[\\/:*?"<>|]/g, '_').slice(0, 40);
+        const fileName = `${dateStr}_${safeTitle}.md`;
+        const filePath = path.join(clipDir, fileName);
+        fs.writeFileSync(filePath, md, 'utf-8');
+        const { exec } = require('child_process');
+        exec('chown -R www-data:www-data ' + JSON.stringify(path.join(VAULT_DIR, '网页笔记')), () => {});
+
+        console.log('Web clip saved:', filePath);
+
+        // 6. Optional: generate flashcards
+        if (options.flashcards) {
+          (async () => {
+            try {
+              const FLASHCARD_FILE = '/root/.flashcards-server.json';
+              const FC_SHORT = {'高数II':'高数','有机化学':'有机','概率统计':'概统','大学物理':'大物','分析化学':'分析化学','普通生物学':'普生','AI基础':'AI基础','习思想':'习思想','其他':'其他'};
+              const fcSubject = FC_SHORT[finalSubject] || finalSubject;
+              const fcPrompt = [
+                { role: 'system', content: '从以下内容提取2-4个重要知识点，生成闪卡。返回JSON数组：[{"q":"问题","a":"答案","difficulty":"easy|medium|hard"}]。只返回JSON。' },
+                { role: 'user', content: text.slice(0, 3000) }
+              ];
+              const fcRaw = await callModelJSON(fcPrompt, 'deepseek-v3.2');
+              let fcCards;
+              try { fcCards = JSON.parse(fcRaw.replace(/```json\s*/g, '').replace(/```\s*/g, '')); }
+              catch(e) { const m = fcRaw.match(/\[.*\]/s); if(m) fcCards = JSON.parse(m[0]); else return; }
+              if (Array.isArray(fcCards) && fcCards.length > 0) {
+                let existing = [];
+                try { existing = JSON.parse(fs.readFileSync(FLASHCARD_FILE, 'utf-8')); } catch(e) {}
+                const newCards = fcCards.map((c, i) => ({
+                  id: Date.now() + '_clip_' + i, s: fcSubject, q: c.q, a: c.a,
+                  difficulty: c.difficulty || 'medium',
+                  source: '网页笔记/' + finalSubject + '/' + fileName,
+                  created: new Date().toISOString(), synced: false
+                }));
+                existing.push(...newCards);
+                fs.writeFileSync(FLASHCARD_FILE, JSON.stringify(existing, null, 2));
+                console.log('Clip flashcards: ' + newCards.length);
+              }
+            } catch(e) { console.error('Clip flashcard error:', e.message); }
+          })();
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({
+          success: true,
+          path: `网页笔记/${finalSubject}/${fileName}`,
+          subject: finalSubject,
+          summary: summary
+        }));
+      } catch(e) {
+        console.error('clip error:', e);
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // Video course progress API
+  if (req.url.startsWith('/api/video')) {
+    const VIDEO_FILE = '/root/.course-videos.json';
+
+    if (req.method === 'GET' && req.url === '/api/video-courses') {
+      try {
+        let data = {};
+        try { data = JSON.parse(fs.readFileSync(VIDEO_FILE, 'utf-8')); } catch(e) {}
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify(data));
+      } catch(e) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/video-progress') {
+      let body = '';
+      req.on('data', c => body += c);
+      req.on('end', () => {
+        try {
+          const { subject, episode, progress_pct, notes, source, url, total, title } = JSON.parse(body);
+          let data = {};
+          try { data = JSON.parse(fs.readFileSync(VIDEO_FILE, 'utf-8')); } catch(e) { data = { courses: {} }; }
+
+          if (!data.courses[subject]) {
+            data.courses[subject] = { title: title || subject + '网课', url: url || '', total: total || 0, current_episode: episode || 1, episodes: {}, source: source || 'bilibili' };
+          }
+          const course = data.courses[subject];
+          // Migrate old watched[] to episodes{} if needed
+          if (course.watched && course.watched.length > 0 && (!course.episodes || Object.keys(course.episodes).length === 0)) {
+            course.episodes = {};
+            course.watched.forEach(ep => {
+              course.episodes[String(ep)] = { progress: 100, completed: true, date: '' };
+            });
+          }
+          if (!course.episodes) course.episodes = {};
+          if (total && total > course.total) course.total = total;
+          if (url) course.url = url;
+          // Only set title if not already set (don't overwrite with page title)
+          if (title && (!course.title || course.title.includes('网课'))) course.title = title;
+
+          // Update episode progress
+          let justCompleted = false;
+          if (episode) {
+            const epKey = String(episode);
+            if (!course.episodes) course.episodes = {};
+            const prev = course.episodes[epKey] || { progress: 0, completed: false };
+            const pct = progress_pct || 0;
+            if (pct > (prev.progress || 0)) prev.progress = pct;
+            if (pct >= 90 && !prev.completed) {
+              prev.completed = true;
+              justCompleted = true;
+              // Also add to watched array for backward compat
+              if (!course.watched) course.watched = [];
+              if (!course.watched.includes(episode)) {
+                course.watched.push(episode);
+                course.watched.sort((a,b) => a-b);
+              }
+            }
+            prev.date = new Date().toISOString().split('T')[0];
+            course.episodes[epKey] = prev;
+            course.current_episode = episode;
+          }
+          if (notes && episode) {
+            if (!course.notes) course.notes = {};
+            course.notes[String(episode)] = notes;
+          }
+
+          fs.writeFileSync(VIDEO_FILE, JSON.stringify(data, null, 2));
+
+          const completed = Object.values(course.episodes || {}).filter(e => e.completed).length;
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ ok: true, completed, total: course.total, just_completed: justCompleted }));
+        } catch(e) {
+          res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      return;
+    }
+  }
+
   // Problems API (AI-extracted problem bank)
   if (req.url.startsWith('/api/problems')) {
     const PROBLEMS_FILE = '/root/.ai-problems.json';

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>今日聚焦</title>
+<style>
+:root{--bg:#0f0f1a;--card:#1a1a2e;--text:#e0e0e0;--text2:#888;--accent:#4361ee;--green:#2a9d8f;--red:#e76f51;--yellow:#e9c46a;--border:#2a2a3e}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;min-height:100dvh;padding:16px;padding-top:env(safe-area-inset-top,16px)}
+.container{max-width:420px;margin:0 auto}
+
+/* Countdown */
+.countdown{text-align:center;margin-bottom:20px}
+.countdown .num{font-size:48px;font-weight:800;background:linear-gradient(135deg,#4361ee,#f72585);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.countdown .label{font-size:13px;color:var(--text2)}
+
+/* Focus card */
+.focus{margin-bottom:12px}
+.focus-title{font-size:13px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.focus-title .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.task{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);transition:all .15s;-webkit-tap-highlight-color:transparent}
+.task:active{transform:scale(0.98);background:rgba(67,97,238,.08)}
+.task-icon{font-size:24px;flex-shrink:0}
+.task-body{flex:1;min-width:0}
+.task-name{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-meta{font-size:12px;color:var(--text2);margin-top:2px}
+.task-arrow{color:var(--text2);font-size:18px;flex-shrink:0}
+
+/* Video continue */
+.video-card{background:var(--card);border:1px solid var(--green);border-radius:14px;padding:16px;margin-bottom:8px;display:block;text-decoration:none;color:var(--text);transition:all .15s}
+.video-card:active{transform:scale(0.98)}
+.video-bar{height:4px;background:rgba(255,255,255,.06);border-radius:2px;margin-top:10px;overflow:hidden}
+.video-fill{height:100%;background:var(--green);border-radius:2px}
+
+/* Quick actions */
+.actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+.act{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 8px;text-align:center;text-decoration:none;color:var(--text);font-size:12px;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.act:active{transform:scale(0.95)}
+.act-icon{font-size:24px;display:block;margin-bottom:4px}
+
+/* Greeting */
+.greeting{text-align:center;font-size:13px;color:var(--text2);margin-bottom:20px;line-height:1.6}
+
+.footer{text-align:center;margin-top:20px}
+.footer a{color:var(--text2);font-size:12px;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="countdown">
+<div class="num" id="days">--</div>
+<div class="label">天后期末</div>
+</div>
+
+<div class="greeting" id="greeting">加载中...</div>
+
+<!-- Top 3 focus tasks -->
+<div class="focus">
+<div class="focus-title"><span class="dot" style="background:var(--red)"></span> 今日必做</div>
+<div id="tasks"><div class="task"><div class="task-body"><div class="task-meta">加载中...</div></div></div></div>
+</div>
+
+<!-- Video continue -->
+<div id="video-section" style="display:none">
+<div class="focus">
+<div class="focus-title"><span class="dot" style="background:var(--green)"></span> 继续看课</div>
+<div id="video-card"></div>
+</div>
+</div>
+
+<!-- Quick actions -->
+<div class="actions">
+<a class="act" href="flashcards.html"><span class="act-icon">🃏</span>刷闪卡</a>
+<a class="act" href="problems.html"><span class="act-icon">📚</span>刷题库</a>
+<a class="act" href="exam.html"><span class="act-icon">📝</span>模拟考</a>
+<a class="act" href="weakness.html"><span class="act-icon">🎯</span>弱点</a>
+<a class="act" href="chat.html"><span class="act-icon">🤖</span>AI问答</a>
+<a class="act" href="index.html"><span class="act-icon">📊</span>全部</a>
+</div>
+
+<div class="footer"><a href="index.html">完整指挥中心 →</a></div>
+</div>
+
+<script>
+// Countdown
+var exam = new Date('2026-06-22T09:00:00+08:00');
+var days = Math.floor((exam - new Date()) / 864e5);
+document.getElementById('days').textContent = days;
+
+// Greeting based on time
+var hour = new Date().getHours();
+var greetings = {
+  6: '早上好，新的一天开始了',
+  11: '上午好，专注学习中',
+  14: '下午好，别忘了休息',
+  18: '傍晚了，今天学得怎么样？',
+  21: '晚上好，冲刺一下',
+  23: '该休息了，明天继续'
+};
+var g = '加油';
+for (var h in greetings) { if (hour >= parseInt(h)) g = greetings[h]; }
+document.getElementById('greeting').textContent = g;
+
+// Load today's real tasks
+fetch('/api/task-projects').then(function(r){return r.json()}).then(function(d){
+  var taskEl = document.getElementById('tasks');
+  taskEl.innerHTML = '';
+  var projects = d.projects || [];
+  var total = projects.reduce(function(a,p){return a+(p.pending||0)}, 0);
+
+  if (total === 0) {
+    taskEl.innerHTML = '<div class="task"><span class="task-icon">\u2705</span><div class="task-body"><div class="task-name">\u4eca\u5929\u6ca1\u6709\u7d27\u6025\u4efb\u52a1</div><div class="task-meta">\u81ea\u7531\u63a8\u8fdb\u590d\u4e60\u8ba1\u5212</div></div></div>';
+    return;
+  }
+
+  projects.filter(function(p){return p.pending>0}).slice(0,3).forEach(function(p){
+    var icon = p.name.indexOf('\u590d\u4e60')>=0 ? '\ud83d\udcda' : p.name.indexOf('DDL')>=0 ? '\u23f0' : '\ud83d\udcdd';
+    taskEl.innerHTML += '<div class="task"><span class="task-icon">'+icon+'</span><div class="task-body"><div class="task-name">'+p.name+'</div><div class="task-meta">'+p.pending+' \u9879\u5f85\u529e</div></div><span class="task-arrow">\u203a</span></div>';
+  });
+
+  // Study time today
+  fetch('/api/study-stats').then(function(r){return r.json()}).then(function(sd){
+    var today = new Date().toISOString().slice(0,10);
+    var td = sd.logs ? sd.logs[today] : null;
+    var mins = 0;
+    if(td){for(var k in td) mins += td[k];}
+    if(mins > 0){
+      taskEl.innerHTML += '<div class="task"><span class="task-icon">\u23f1\ufe0f</span><div class="task-body"><div class="task-name">\u4eca\u65e5\u5df2\u5b66 '+mins+' \u5206\u949f</div><div class="task-meta">#\u5b66\u4e86 \u6253\u5361</div></div></div>';
+    }
+  }).catch(function(){});
+}).catch(function(){});
+
+
+
+// Video continue
+fetch('/api/video-courses').then(function(r){return r.json()}).then(function(d){
+  var courses = d.courses || {};
+  var keys = Object.keys(courses);
+  if (keys.length === 0) return;
+  document.getElementById('video-section').style.display = 'block';
+  var html = '';
+  keys.forEach(function(subj){
+    var c = courses[subj];
+    var ep = c.current_episode || 1;
+    var eps = c.episodes || {};
+    var epInfo = eps[String(ep)] || {};
+    var pct = epInfo.progress || 0;
+    var total = c.total || 0;
+    var completed = 0;
+    Object.values(eps).forEach(function(e){if(e.completed)completed++});
+    var url = c.url ? c.url.split('?')[0] + '?p=' + ep : '#';
+    html += '<a class="video-card" href="' + url + '" target="_blank">';
+    html += '<div style="font-weight:700">' + subj + ' · P' + ep + '</div>';
+    html += '<div style="font-size:12px;color:var(--text2);margin-top:4px">' + (c.title||'') + ' · ' + completed + '/' + total + '集</div>';
+    html += '<div class="video-bar"><div class="video-fill" style="width:' + pct + '%"></div></div>';
+    html += '<div style="font-size:11px;color:var(--green);margin-top:6px">继续观看 ' + pct + '% →</div>';
+    html += '</a>';
+  });
+  document.getElementById('video-card').innerHTML = html;
+}).catch(function(){});
+</script>
+</body>
+</html>

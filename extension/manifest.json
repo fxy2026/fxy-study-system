@@ -1,15 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "Gemini to Obsidian",
-  "description": "Save Gemini conversations to Obsidian vault with LaTeX, code, and images",
-  "version": "1.0.0",
-  "permissions": ["storage", "activeTab"],
+  "name": "FXY Study Helper",
+  "description": "Save Gemini conversations, clip web pages, track video courses — all synced to Obsidian",
+  "version": "2.0.0",
+  "permissions": ["storage", "activeTab", "contextMenus"],
   "host_permissions": [
     "https://gemini.google.com/*",
     "https://kb.xpy.me/*",
     "https://*.googleusercontent.com/*",
     "https://*.googleapis.com/*",
-    "https://*.google.com/*"
+    "https://*.google.com/*",
+    "https://www.bilibili.com/*",
+    "https://*/*",
+    "http://*/*"
   ],
   "icons": {
     "48": "icon48.png",
@@ -20,6 +23,16 @@
       "matches": ["https://gemini.google.com/*"],
       "js": ["turndown.min.js", "content.js"],
       "css": ["content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.bilibili.com/video/*"],
+      "js": ["bilibili.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["clipper.js"],
       "run_at": "document_idle"
     }
   ],

@@ -104,6 +104,10 @@ h1{font-size:22px;text-align:center;margin-bottom:4px;background:linear-gradient
 </div>
 
 <!-- Tools -->
+<div id="video-section" style="display:none">
+<div class="section-title">📺 继续学习</div>
+<div id="video-cards" style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap"></div>
+</div>
 <div class="section-title">学习工具</div>
 <div class="grid">
 <a class="card" href="planner.html"><span class="card-icon">📅</span><div class="card-title">每日计划</div><div class="card-desc">AI 自适应计划</div></a>
@@ -149,6 +153,33 @@ document.getElementById('pw-input').addEventListener('keydown',e=>{if(e.key==='E
 
 // Always load dashboard data on page load
 setTimeout(loadDashboard, 200);
+setTimeout(function(){
+  fetch('/api/video-courses').then(function(r){return r.json()}).then(function(d){
+    var courses = d.courses || {};
+    var keys = Object.keys(courses);
+    if (keys.length === 0) return;
+    document.getElementById('video-section').style.display = 'block';
+    var el = document.getElementById('video-cards');
+    var html = '';
+    keys.forEach(function(subj){
+      var course = courses[subj];
+      var eps = course.episodes || {};
+      var completed = 0;
+      Object.values(eps).forEach(function(e){if(e.completed)completed++});
+      var current = course.current_episode || 1;
+      var currentEp = eps[String(current)] || {};
+      var currentPct = currentEp.progress || 0;
+      var total = course.total || 0;
+      var pct = total > 0 ? Math.round(completed/total*100) : 0;
+      var url = course.url ? course.url + '?p=' + current : '#';
+      html += '<a href="' + url + '" target="_blank" style="flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;text-decoration:none;color:var(--text)">';
+      html += '<div style="font-weight:700;font-size:14px;margin-bottom:6px">' + subj + '</div>';
+      html += '<div style="font-size:12px;color:var(--text2)">P' + current + ' \u00b7 ' + currentPct + '% \u00b7 ' + completed + '/' + total + '\u96c6</div>';
+      html += '<div style="margin-top:8px;font-size:12px;color:var(--accent2)">\u7ee7\u7eed\u89c2\u770b \u2192</div></a>';
+    });
+    el.innerHTML = html;
+  }).catch(function(){});
+}, 500);
 
 // Countdown
 const exam = new Date('2026-06-22T09:00:00+08:00');

@@ -1,4 +1,22 @@
-// Background service worker - fetches images bypassing CORS
+// Background service worker
+
+// Register context menu (right-click)
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'save-to-obsidian',
+    title: '保存到 Obsidian',
+    contexts: ['selection', 'page']
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'save-to-obsidian') {
+    const action = info.selectionText ? 'clip-selection' : 'clip-full';
+    chrome.tabs.sendMessage(tab.id, { action });
+  }
+});
+
+// Image fetch for Gemini extension
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'fetchImage') {
     fetchImageAsBase64(msg.url)

@@ -3583,6 +3583,289 @@ def daily_snapshot(now, today):
     log(f'Daily snapshot: fc={snap.get("flashcards_total")}, probs={snap.get("problems_total")}, study={snap.get("study_minutes_today")}min')
 
 
+# ========== Problem Variant Factory ==========
+
+def variant_factory(now, today):
+    """Generate variant problems from existing AI problem bank"""
+    import time as _time
+    VARIANT_DONE = '/root/.variant-done.json'
+    try:
+        with open(VARIANT_DONE, 'r') as f:
+            done = set(json.load(f))
+    except:
+        done = set()
+
+    try:
+        probs = json.load(open(PROBLEMS_FILE))
+    except:
+        return
+
+    # Pick 3 undone problems
+    candidates = [p for p in probs if p.get('id') not in done and len(p.get('question', '')) > 20]
+    if not candidates:
+        log('Variant factory: all problems done')
+        return
+
+    new_variants = []
+    for p in candidates[:3]:
+        prompt = f"""以下是一道练习题。请生成2个变式题（改变数字/条件/问法，但考察同样的知识点）。
+
+原题：{p.get('question', '')}
+科目：{p.get('subject', '')}
+
+返回JSON数组：[{{"question":"变式题1","solution":"解答1","key_insight":"思路"}},{{"question":"变式题2","solution":"解答2","key_insight":"思路"}}]
+数学公式用 $...$ 格式。只返回JSON。"""
+
+        payload = json.dumps({
+            'model': AI_MODEL,
+            'messages': [{'role': 'user', 'content': prompt}],
+            'max_tokens': 1500, 'temperature': 0.5
+        }).encode('utf-8')
+        try:
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+            })
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+            raw = result['choices'][0]['message']['content'].strip()
+            if raw.startswith('```'): raw = '\n'.join(raw.split('\n')[1:])
+            if raw.endswith('```'): raw = '\n'.join(raw.split('\n')[:-1])
+
+            import re as _re
+            try:
+                variants = json.loads(raw)
+            except:
+                m = _re.search(r'\[[\s\S]*\]', raw)
+                variants = json.loads(m.group(0)) if m else []
+
+            ts = int(datetime.datetime.now().timestamp() * 1000)
+            for i, v in enumerate(variants[:2]):
+                new_variants.append({
+                    'id': f'{ts}_var_{i}',
+                    'subject': p.get('subject', ''),
+                    'source': f'variant of {p.get("id", "")}',
+                    'question': v.get('question', ''),
+                    'solution': v.get('solution', ''),
+                    'key_insight': v.get('key_insight', ''),
+                    'difficulty': p.get('difficulty', 'medium'),
+                    'type': p.get('type', '计算'),
+                    'keywords': p.get('keywords', []),
+                    'created': today.isoformat(),
+                    'mastery': 0, 'review_count': 0, 'last_reviewed': None
+                })
+            done.add(p.get('id'))
+            log(f'Variant: {len(variants)} from {p.get("subject")} "{p.get("question","")[:20]}"')
+        except Exception as e:
+            log(f'Variant error: {e}')
+            done.add(p.get('id'))
+        _time.sleep(3)
+
+    if new_variants:
+        probs.extend(new_variants)
+        with open(PROBLEMS_FILE, 'w') as f:
+            json.dump(probs, f, ensure_ascii=False, indent=2)
+        log(f'Variant factory: +{len(new_variants)} variants')
+
+    with open(VARIANT_DONE, 'w') as f:
+        json.dump(list(done), f)
+
+
+# ========== Problem Factory from Course Notes ==========
+
+def problem_factory(now, today):
+    """Generate practice problems from course notes"""
+    import time as _time
+    PROB_DONE = '/root/.prob-factory-done.json'
+    try:
+        with open(PROB_DONE, 'r') as f:
+            done = set(json.load(f))
+    except:
+        done = set()
+
+    candidates = []
+    for root, dirs, files in os.walk(COURSE_DIR):
+        dirs[:] = [d for d in dirs if d != '闪卡']
+        for fname in files:
+            if not fname.endswith('.md') or fname in ('期末冲刺精华.md', '网课笔记.md'):
+                continue
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, VAULT_DIR)
+            if rel not in done:
+                subj = os.path.basename(os.path.dirname(fpath))
+                candidates.append((fpath, rel, subj))
+
+    if not candidates:
+        log('Problem factory: all files processed')
+        return
+
+    try:
+        probs = json.load(open(PROBLEMS_FILE))
+    except:
+        probs = []
+
+    for fpath, rel, subj in candidates[:2]:
+        try:
+            with open(fpath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            if len(content) < 200:
+                done.add(rel)
+                continue
+
+            prompt = f"""从以下{subj}课程笔记中出2-3道练习题。
+
+{content[:4000]}
+
+返回JSON:{{"problems":[{{"question":"题目($...$公式)","solution":"解答","key_insight":"思路","difficulty":"easy|medium|hard","type":"计算|证明|概念|应用"}}]}}
+如果内容不适合出题返回{{"problems":[]}}。只返回JSON。"""
+
+            payload = json.dumps({
+                'model': AI_MODEL,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'max_tokens': 1500, 'temperature': 0.4
+            }).encode('utf-8')
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+            })
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+            raw = result['choices'][0]['message']['content'].strip()
+            if raw.startswith('```'): raw = '\n'.join(raw.split('\n')[1:])
+            if raw.endswith('```'): raw = '\n'.join(raw.split('\n')[:-1])
+
+            import re as _re
+            try:
+                parsed = json.loads(raw)
+            except:
+                m = _re.search(r'\{[\s\S]*\}', raw)
+                parsed = json.loads(m.group(0)) if m else {'problems': []}
+
+            ts = int(datetime.datetime.now().timestamp() * 1000)
+            for i, p in enumerate(parsed.get('problems', [])[:3]):
+                probs.append({
+                    'id': f'{ts}_pf_{i}', 'subject': subj, 'source': rel,
+                    'question': p.get('question', ''), 'solution': p.get('solution', ''),
+                    'key_insight': p.get('key_insight', ''),
+                    'difficulty': p.get('difficulty', 'medium'),
+                    'type': p.get('type', '计算'), 'keywords': [],
+                    'created': today.isoformat(), 'mastery': 0, 'review_count': 0, 'last_reviewed': None
+                })
+            log(f'ProbFactory: {len(parsed.get("problems",[]))} from {rel}')
+            done.add(rel)
+        except Exception as e:
+            log(f'ProbFactory error ({rel}): {e}')
+            done.add(rel)
+        _time.sleep(3)
+
+    with open(PROBLEMS_FILE, 'w') as f:
+        json.dump(probs, f, ensure_ascii=False, indent=2)
+    with open(PROB_DONE, 'w') as f:
+        json.dump(list(done), f)
+
+
+# ========== Task Smart Enrich ==========
+
+def task_enrich(now, today):
+    """Add specific steps to vague Vikunja tasks"""
+    all_tasks = fetch_all_tasks()
+    tomorrow = today + datetime.timedelta(days=1)
+    enriched = 0
+
+    for t in all_tasks:
+        if t.get('done'):
+            continue
+        due = parse_date(t.get('due_date', ''))
+        if not due or due.date() not in (today, tomorrow):
+            continue
+        title = t.get('title', '')
+        desc = t.get('description', '') or ''
+        # Skip if already has description or title is specific enough
+        if len(desc) > 30 or len(title) > 20:
+            continue
+
+        prompt = f"""学生有一个待办任务："{title}"（截止{due.date()}）
+
+请生成3-4个具体执行步骤，每步一行，简洁可操作。
+例如：
+1. 先看教材第X章第Y节（15min）
+2. 做课后习题1-5题（20min）
+3. 整理错题到笔记（10min）
+
+只输出步骤，不要其他内容。"""
+
+        payload = json.dumps({
+            'model': AI_MODEL,
+            'messages': [{'role': 'user', 'content': prompt}],
+            'max_tokens': 200, 'temperature': 0.5
+        }).encode('utf-8')
+
+        try:
+            req = urllib.request.Request(AI_API_URL, data=payload, headers={
+                'Authorization': f'Bearer {AI_API_KEY}', 'Content-Type': 'application/json'
+            })
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json.loads(resp.read().decode('utf-8'))
+            steps = result['choices'][0]['message']['content'].strip()
+
+            vikunja_update_task(t.get('id'), {'description': steps})
+            enriched += 1
+        except:
+            pass
+
+    if enriched:
+        bark_push(f'📋 已补充{enriched}个任务', '添加了具体执行步骤', group='morning')
+        log(f'Task enrich: {enriched} tasks')
+
+
+# ========== Knowledge Push (3x daily) ==========
+
+def knowledge_push(now, today, push_type='formula'):
+    """Push one knowledge point via Bark (formula/concept/mistake)"""
+    import random
+
+    content = ''
+    title = ''
+
+    if push_type == 'formula':
+        # Pick a random flashcard
+        try:
+            fc = json.load(open('/root/.flashcards-server.json'))
+            if fc:
+                card = random.choice(fc)
+                title = '📐 公式速记'
+                content = f'Q: {card.get("q","")[:60]}\nA: {card.get("a","")[:80]}'
+        except:
+            pass
+
+    elif push_type == 'concept':
+        # Pick from course notes keywords
+        try:
+            probs = json.load(open(PROBLEMS_FILE))
+            if probs:
+                p = random.choice(probs)
+                title = '💡 概念速记'
+                content = f'{p.get("subject","")}: {p.get("key_insight","")[:80]}'
+        except:
+            pass
+
+    elif push_type == 'mistake':
+        # Pick from spaced repetition or weaknesses
+        try:
+            sp = json.load(open(SPACED_FILE))
+            active = [i for i in sp if i.get('status') == 'active']
+            if active:
+                item = random.choice(active)
+                title = '⚠️ 易错提醒'
+                content = item.get('text', '')[:100]
+        except:
+            pass
+
+    if content:
+        # Use plain text (Bark doesn't render LaTeX)
+        content = content.replace('$', '').replace('\\', '')
+        bark_push(title, content, sound='silence', group='knowledge')
+        log(f'Knowledge push ({push_type}): {content[:30]}')
+
+
 # ========== Compile Exam Essentials ==========
 
 def compile_subject(now, today, subject):
@@ -3918,6 +4201,14 @@ def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else 'morning'
     now = datetime.datetime.now(TZ)
 
+    # push mode: argv[2] is push type, not date
+    if mode == 'push':
+        today = now.date()
+        push_type = sys.argv[2] if len(sys.argv) > 2 else 'formula'
+        knowledge_push(now, today, push_type)
+        log(f'{mode} {push_type} done')
+        return
+
     # extract mode: batch extract problems from all AI notes
     if mode == 'extract':
         today = now.date()
@@ -3995,6 +4286,13 @@ def main():
         flashcard_factory(now, today)
     elif mode == 'micro':
         micro_lesson(now, today)
+    elif mode == 'variant':
+        variant_factory(now, today)
+    elif mode == 'probfactory':
+        problem_factory(now, today)
+    elif mode == 'enrich':
+        task_enrich(now, today)
+    # push mode handled above (before date parsing)
     elif mode == 'snapshot':
         daily_snapshot(now, today)
     else:

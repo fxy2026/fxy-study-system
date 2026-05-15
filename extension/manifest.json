@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini to Obsidian",
+  "description": "Save Gemini conversations to Obsidian vault with LaTeX, code, and images",
+  "version": "1.0.0",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "https://kb.xpy.me/*",
+    "https://*.googleusercontent.com/*",
+    "https://*.googleapis.com/*",
+    "https://*.google.com/*"
+  ],
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["turndown.min.js", "content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

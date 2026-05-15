@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>每日学习计划</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+:root{--bg:#0a0a14;--card:#1a1a2e;--text:#e0e0e0;--text2:#888;--border:#2a2a3e;--accent:#4361ee;--accent2:#7c8cf8;--success:#2a9d8f;--warn:#f59e0b;--danger:#e53e3e;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.header{background:var(--card);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:50}
+.header h1{font-size:16px;background:linear-gradient(135deg,#4361ee,#2a9d8f);-webkit-background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap}
+.hright{margin-left:auto;display:flex;gap:6px}
+.btn{background:var(--bg);border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;transition:all .2s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.primary:hover{background:#3a56d4}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+.date-nav{display:flex;align-items:center;justify-content:center;gap:16px;padding:14px;background:var(--card);margin-bottom:1px}
+.date-nav button{background:none;border:none;color:var(--accent2);font-size:20px;cursor:pointer;padding:4px 8px}
+.date-main{font-size:18px;font-weight:700;text-align:center}
+.date-sub{font-size:12px;color:var(--text2);text-align:center;margin-top:2px}
+.today-badge{background:var(--accent);color:#fff;font-size:10px;padding:2px 6px;border-radius:8px;margin-left:6px}
+
+.schedule-bar{background:var(--card);border-bottom:1px solid var(--border);padding:10px 16px;overflow-x:auto}
+.schedule-bar h3{font-size:13px;color:var(--text2);margin-bottom:6px}
+.schedule-items{display:flex;gap:8px}
+.sch-item{background:rgba(67,97,238,.1);border:1px solid rgba(67,97,238,.2);border-radius:8px;padding:6px 10px;white-space:nowrap;font-size:12px}
+.sch-item .sch-time{color:var(--accent2);font-weight:600}
+.sch-item .sch-name{margin-left:4px}
+.no-class{color:var(--text2);font-size:13px}
+
+.main{max-width:750px;margin:0 auto;padding:12px 16px 100px}
+
+/* Tabs */
+.tabs{display:flex;gap:0;margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.tab{flex:1;padding:10px;text-align:center;font-size:14px;cursor:pointer;background:var(--card);transition:all .2s;border-right:1px solid var(--border)}
+.tab:last-child{border-right:none}
+.tab.active{background:var(--accent);color:#fff}
+
+/* Rendered markdown view */
+#preview{line-height:1.8;font-size:14px}
+#preview h1{font-size:20px;margin:16px 0 8px;color:var(--accent2)}
+#preview h2{font-size:16px;margin:14px 0 6px;color:var(--accent2);border-bottom:1px solid var(--border);padding-bottom:4px}
+#preview table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
+#preview th,#preview td{border:1px solid var(--border);padding:6px 10px;text-align:left}
+#preview th{background:rgba(67,97,238,.1)}
+#preview ul,#preview ol{padding-left:20px}
+#preview li{margin:4px 0}
+#preview blockquote{border-left:3px solid var(--accent);padding-left:12px;color:var(--text2);margin:8px 0}
+#preview hr{border:none;border-top:1px solid var(--border);margin:12px 0}
+#preview code{background:rgba(255,255,255,.08);padding:1px 4px;border-radius:3px;font-size:13px}
+#preview input[type=checkbox]{margin-right:6px;accent-color:var(--success)}
+
+/* Editor */
+#editor{width:100%;min-height:500px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-family:"Fira Code",monospace;font-size:13px;line-height:1.7;resize:vertical;outline:none}
+#editor:focus{border-color:var(--accent)}
+
+/* Loading & empty */
+.loading{text-align:center;padding:60px 20px;color:var(--text2)}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:50px 20px}
+.empty-icon{font-size:42px;margin-bottom:10px}
+.empty-text{color:var(--text2);margin-bottom:16px;line-height:1.6}
+
+/* Feedback */
+.fb-bar{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:12px}
+.fb-bar textarea{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font-size:13px;font-family:inherit;resize:none;min-height:60px;outline:none;margin-bottom:8px}
+.fb-bar textarea:focus{border-color:var(--accent)}
+.fb-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.chip{background:var(--bg);border:1px solid var(--border);color:var(--text2);border-radius:14px;padding:3px 10px;font-size:11px;cursor:pointer;transition:all .2s}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.fb-actions{display:flex;gap:8px}
+
+.status-msg{padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:12px;display:none}
+.status-msg.show{display:block}
+.status-msg.ok{background:rgba(42,157,143,.15);color:var(--success)}
+.status-msg.err{background:rgba(229,62,62,.15);color:var(--danger)}
+
+@media(max-width:500px){.header h1{font-size:14px}.sch-item{font-size:11px}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📅 每日学习计划</h1>
+  <div class="hright">
+    <button class="btn" onclick="goToday()">今天</button>
+    <button class="btn primary" id="gen-btn" onclick="generate()">✨ AI 生成</button>
+  </div>
+</div>
+
+<div class="date-nav">
+  <button onclick="changeDate(-1)">◀</button>
+  <div>
+    <div class="date-main" id="d-main"></div>
+    <div class="date-sub" id="d-sub"></div>
+  </div>
+  <button onclick="changeDate(1)">▶</button>
+</div>
+
+<div class="schedule-bar">
+  <h3>📚 今日课程</h3>
+  <div class="schedule-items" id="sch-items"></div>
+</div>
+
+<div class="main">
+  <div id="status" class="status-msg"></div>
+
+  <div class="tabs">
+    <div class="tab active" id="tab-preview" onclick="switchTab('preview')">📖 预览</div>
+    <div class="tab" id="tab-edit" onclick="switchTab('edit')">✏️ 编辑</div>
+  </div>
+
+  <div id="content-area">
+    <div class="empty" id="empty-state">
+      <div class="empty-icon">📝</div>
+      <div class="empty-text">这天还没有每日笔记<br>点击「AI 生成」，AI 会根据今天的课表<br>自动安排复盘、作业和复习任务</div>
+      <button class="btn primary" onclick="generate()" style="font-size:15px;padding:10px 24px">✨ AI 生成今日计划</button>
+    </div>
+  </div>
+
+  <div class="fb-bar" id="fb-bar" style="display:none">
+    <div class="fb-chips">
+      <span class="chip" onclick="setFb('今天下午有事，把下午的任务移到晚上')">下午有事</span>
+      <span class="chip" onclick="setFb('多安排高数练习时间，期末权重最大')">多练高数</span>
+      <span class="chip" onclick="setFb('晚上有网管值班，安排背诵类任务')">晚上值班</span>
+      <span class="chip" onclick="setFb('轻松一点，减少总任务量')">轻松一点</span>
+      <span class="chip" onclick="setFb('概率统计下周有小测，增加概统复习')">突击概统</span>
+      <span class="chip" onclick="setFb('增加有机化学合成路线练习')">练有机合成</span>
+    </div>
+    <textarea id="fb-input" placeholder="告诉 AI 你想怎么调整计划...（AI 会在当前计划基础上修改，不会全部重写）"></textarea>
+    <div class="fb-actions">
+      <button class="btn primary" onclick="modifyPlan()">✏️ AI 局部调整</button>
+      <button class="btn" onclick="saveNote()">💾 保存</button>
+      <button class="btn" onclick="if(confirm('确定要全部重新生成？当前计划会被替换'))generate()">🔄 全部重来</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SCHEDULE = {
+  1:[{t:'08:00-09:40',n:'高等数学II'},{t:'10:00-11:40',n:'大学物理B'}],
+  2:[{t:'08:00-09:40',n:'概率统计'},{t:'10:00-11:40',n:'高等数学II'},{t:'12:00-17:20',n:'有机化学实验'}],
+  3:[{t:'08:00-09:40',n:'英汉口译'},{t:'13:00-15:20',n:'习思想'},{t:'15:40-17:20',n:'网球'}],
+  4:[{t:'08:00-09:40',n:'大学物理B'},{t:'10:00-11:40',n:'概率统计'},{t:'13:00-16:30',n:'ET创新实验'},{t:'15:40-17:20',n:'有机化学'}],
+  5:[{t:'08:00-09:40',n:'分析化学'},{t:'15:40-17:20',n:'军事理论'},{t:'18:00-19:40',n:'人工智能基础'}],
+  6:[{t:'18:00-19:40',n:'大学物理实验'}],
+  0:[]
+};
+const WD=['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+const EXAM=new Date('2026-06-22');
+
+let curDate=new Date();
+let noteContent='';
+let curTab='preview';
+
+function dk(d){return d.toISOString().split('T')[0]}
+function goToday(){curDate=new Date();update()}
+function changeDate(n){curDate=new Date(curDate.getTime()+n*864e5);update()}
+
+function update(){
+  const key=dk(curDate);
+  const wd=curDate.getDay();
+  const isToday=dk(new Date())===key;
+  const left=Math.ceil((EXAM-curDate)/864e5);
+
+  document.getElementById('d-main').innerHTML=
+    `${curDate.getMonth()+1}月${curDate.getDate()}日 ${WD[wd]}`+(isToday?'<span class="today-badge">今天</span>':'');
+  document.getElementById('d-sub').textContent=`距期末 ${left} 天`;
+
+  // Schedule
+  const sch=SCHEDULE[wd]||[];
+  const si=document.getElementById('sch-items');
+  si.innerHTML=sch.length?sch.map(s=>`<div class="sch-item"><span class="sch-time">${s.t}</span><span class="sch-name">${s.n}</span></div>`).join('')
+    :'<span class="no-class">今天没课 — 全天可自习 🎉</span>';
+
+  loadNote(key);
+}
+
+async function loadNote(date){
+  const area=document.getElementById('content-area');
+  area.innerHTML='<div class="loading"><div class="spinner"></div>加载中...</div>';
+
+  try{
+    const r=await fetch('/api/read-note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});
+    const d=await r.json();
+    if(d.exists&&d.content.trim()){
+      noteContent=d.content;
+      renderView();
+      document.getElementById('fb-bar').style.display='';
+    }else{
+      noteContent='';
+      area.innerHTML=`<div class="empty"><div class="empty-icon">📝</div>
+        <div class="empty-text">这天还没有每日笔记<br>AI 会根据课表自动安排复盘和复习任务</div>
+        <button class="btn primary" onclick="generate()" style="font-size:15px;padding:10px 24px">✨ AI 生成今日计划</button></div>`;
+      document.getElementById('fb-bar').style.display='none';
+    }
+  }catch(e){
+    area.innerHTML=`<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">加载失败：${e.message}</div></div>`;
+  }
+}
+
+function renderView(){
+  const area=document.getElementById('content-area');
+  if(curTab==='preview'){
+    // Remove frontmatter for display
+    let display=noteContent.replace(/^---[\s\S]*?---\n*/,'');
+    // Convert checkboxes to HTML
+    display=display.replace(/- \[ \]/g,'- <input type="checkbox">').replace(/- \[x\]/g,'- <input type="checkbox" checked>');
+    area.innerHTML=`<div id="preview">${marked.parse(display,{breaks:true})}</div>`;
+    try{renderMathInElement(area,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false})}catch{}
+    // Make checkboxes interactive
+    area.querySelectorAll('input[type=checkbox]').forEach((cb,i)=>{
+      cb.addEventListener('change',()=>{toggleCheckbox(i,cb.checked)});
+    });
+  }else{
+    area.innerHTML=`<textarea id="editor">${noteContent.replace(/</g,'&lt;')}</textarea>`;
+  }
+}
+
+function toggleCheckbox(idx,checked){
+  let count=0;
+  noteContent=noteContent.replace(/- \[([ x])\]/g,(match,state)=>{
+    if(count++===idx)return checked?'- [x]':'- [ ]';
+    return match;
+  });
+  saveNote(true);
+}
+
+function switchTab(tab){
+  curTab=tab;
+  document.getElementById('tab-preview').classList.toggle('active',tab==='preview');
+  document.getElementById('tab-edit').classList.toggle('active',tab==='edit');
+  if(tab==='edit'&&document.getElementById('editor')){
+    // save from editor before switching
+  }
+  if(tab==='preview'&&document.getElementById('editor')){
+    noteContent=document.getElementById('editor').value;
+  }
+  if(noteContent)renderView();
+}
+
+function setFb(t){document.getElementById('fb-input').value=t}
+
+function showStatus(msg,ok){
+  const s=document.getElementById('status');
+  s.textContent=msg;s.className='status-msg show '+(ok?'ok':'err');
+  setTimeout(()=>s.classList.remove('show'),3000);
+}
+
+async function saveNote(silent){
+  if(curTab==='edit'&&document.getElementById('editor')){
+    noteContent=document.getElementById('editor').value;
+  }
+  const date=dk(curDate);
+  try{
+    await fetch('/api/save-note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date,content:noteContent})});
+    if(!silent)showStatus('✅ 已保存到 Obsidian vault（下次同步生效）',true);
+  }catch(e){
+    if(!silent)showStatus('❌ 保存失败：'+e.message,false);
+  }
+}
+
+async function generate(feedback){
+  const date=dk(curDate);
+  const btn=document.getElementById('gen-btn');
+  btn.disabled=true;btn.textContent='⏳ 生成中...';
+  const area=document.getElementById('content-area');
+  const isModify = !!(feedback && noteContent);
+  area.innerHTML=`<div class="loading"><div class="spinner"></div>${isModify?'AI 正在修改计划...':'AI 正在根据课表生成计划...'}<br><span style="font-size:12px;color:var(--text2)">${isModify?'基于当前计划进行调整':'分析课程安排、复习进度和优先级中'}</span></div>`;
+
+  try{
+    const body={date,model:'deepseek-chat'};
+    // 只要有 feedback 且已有笔记，就传给 AI 让它修改而非重新生成
+    if(feedback){body.feedback=feedback;body.existingNote=noteContent;}
+
+    const r=await fetch('/api/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok)throw new Error('API '+r.status);
+    const data=await r.json();
+    let content=data.choices?.[0]?.message?.content||'';
+
+    // Clean up: remove ```markdown wrapper if present, strip non-renderable chars
+    content=content.replace(/^```(?:markdown)?\s*\n?/,'').replace(/\n?```\s*$/,'').trim();
+    // Remove surrogate pairs / non-BMP chars that might cause garbled display (keep common emoji ranges)
+    content=content.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g,'').replace(/[\uFFF0-\uFFFF]/g,'');
+
+    noteContent=content;
+    renderView();
+    document.getElementById('fb-bar').style.display='';
+
+    // Auto-save to vault
+    await fetch('/api/save-note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date,content})});
+    showStatus('✅ 计划已生成并保存，Obsidian 同步后可见',true);
+  }catch(e){
+    area.innerHTML=`<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">生成失败：${e.message}</div>
+      <button class="btn primary" onclick="generate()" style="margin-top:12px">重试</button></div>`;
+  }
+  btn.disabled=false;btn.textContent='✨ AI 生成';
+}
+
+function modifyPlan(){
+  const fb=document.getElementById('fb-input').value.trim();
+  if(!fb){showStatus('请先输入你想怎么调整',false);return;}
+  document.getElementById('fb-input').value='';
+  generate(fb);
+}
+
+update();
+</script>
+</body>
+</html>

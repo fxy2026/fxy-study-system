@@ -1,0 +1,26 @@
+# Obsidian
+.obsidian/
+.trash/
+
+# Personal data (never commit)
+.env
+*.pem
+.ai-problems.json
+.flashcards-server.json
+.spaced-repetition.json
+.weakness-tracker.json
+.study-log.json
+.daily-challenge.json
+.bedtime-review.json
+.news-cache/
+*.processed.json
+reminder.log
+audit.log
+cron.log
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

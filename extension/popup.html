@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body {
+    width: 280px;
+    padding: 16px;
+    font-family: -apple-system, 'Segoe UI', sans-serif;
+    background: #1e1e2e;
+    color: #e0e0e0;
+    margin: 0;
+  }
+  h2 { font-size: 15px; color: #c4b5fd; margin: 0 0 12px 0; }
+  label { display: block; font-size: 12px; color: #999; margin: 8px 0 4px; }
+  input {
+    width: 100%; padding: 7px 8px;
+    background: #2a2a3e; border: 1px solid #444;
+    border-radius: 6px; color: #e0e0e0; font-size: 13px;
+    box-sizing: border-box; outline: none;
+  }
+  input:focus { border-color: #7c3aed; }
+  button {
+    width: 100%; margin-top: 12px; padding: 9px;
+    background: #7c3aed; color: #fff; border: none;
+    border-radius: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.85; }
+  .status { font-size: 12px; margin-top: 8px; text-align: center; }
+  .hint { font-size: 11px; color: #666; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h2>Gemini to Obsidian</h2>
+  <label>Server URL</label>
+  <input type="text" id="apiUrl" placeholder="https://kb.xpy.me/api/smart-note" />
+  <button id="saveBtn">Save Settings</button>
+  <div class="status" id="status"></div>
+  <div class="hint">
+    Open a Gemini conversation, click the purple + button at the bottom right to save.
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

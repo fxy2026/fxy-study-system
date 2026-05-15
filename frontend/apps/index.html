@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FXY 学习指挥中心</title>
+<style>
+:root{--bg:#0f0f1a;--card:#1a1a2e;--text:#e0e0e0;--text2:#888;--accent:#4361ee;--accent2:#7c8cf8;--border:#2a2a3e;--green:#2a9d8f;--red:#e76f51;--yellow:#e9c46a}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:16px}
+#pw-overlay{position:fixed;inset:0;background:linear-gradient(135deg,#4361ee,#3a0ca3);z-index:9999;display:flex;align-items:center;justify-content:center}
+#pw-box{background:#fff;border-radius:16px;padding:40px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);max-width:380px;width:90%}
+#pw-box h2{margin-bottom:8px;color:#1a1a2e}
+#pw-box p{color:#666;margin-bottom:20px;font-size:14px}
+#pw-box input{width:100%;padding:12px 16px;border:2px solid #e0e0e0;border-radius:8px;font-size:16px;outline:none}
+#pw-box input:focus{border-color:#4361ee}
+#pw-box button{margin-top:16px;width:100%;padding:12px;background:#4361ee;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer}
+#pw-err{color:#e53e3e;font-size:13px;margin-top:8px;display:none}
+#app{max-width:960px;margin:0 auto}
+h1{font-size:22px;text-align:center;margin-bottom:4px;background:linear-gradient(135deg,#4361ee,#f72585);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.subtitle{text-align:center;color:var(--text2);margin-bottom:16px;font-size:13px}
+
+/* Countdown */
+#countdown{text-align:center;margin-bottom:20px;padding:16px;background:linear-gradient(135deg,rgba(67,97,238,.1),rgba(247,37,133,.1));border-radius:16px;border:1px solid var(--border)}
+#countdown .days{font-size:42px;font-weight:800;background:linear-gradient(135deg,#4361ee,#f72585);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#countdown .label{font-size:13px;color:var(--text2);margin-top:2px}
+
+/* Stats Row */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.stat-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 10px;text-align:center}
+.stat-num{font-size:22px;font-weight:800;color:var(--accent2)}
+.stat-label{font-size:11px;color:var(--text2);margin-top:2px}
+.stat-num.green{color:var(--green)}
+.stat-num.red{color:var(--red)}
+.stat-num.yellow{color:var(--yellow)}
+
+/* GPA Prediction */
+#gpa-section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+#gpa-section h3{font-size:14px;color:var(--text2);margin-bottom:10px}
+.gpa-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.gpa-chip{padding:8px 16px;border-radius:8px;font-size:14px;font-weight:700;text-align:center}
+.gpa-chip.conservative{background:rgba(231,111,81,.15);color:var(--red)}
+.gpa-chip.moderate{background:rgba(233,196,106,.15);color:var(--yellow)}
+.gpa-chip.optimistic{background:rgba(42,157,143,.15);color:var(--green)}
+#gpa-advice{font-size:12px;color:var(--text2);margin-top:8px;text-align:center}
+
+/* Tool Grid */
+.section-title{font-size:14px;color:var(--text2);margin:16px 0 10px;padding-left:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 12px;text-decoration:none;color:var(--text);transition:all .2s;text-align:center}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(67,97,238,.2);border-color:var(--accent)}
+.card-icon{font-size:28px;display:block;margin-bottom:6px}
+.card-title{font-size:13px;font-weight:700}
+.card-desc{font-size:11px;color:var(--text2);margin-top:4px;line-height:1.4}
+
+/* Footer */
+.footer{text-align:center;color:#555;font-size:12px;margin-top:16px}
+.footer a{color:var(--accent2);text-decoration:none}
+
+@media(max-width:600px){
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .grid{grid-template-columns:repeat(2,1fr)}
+  #countdown .days{font-size:32px}
+}
+</style>
+</head>
+<body>
+<div id="pw-overlay" style="display:none">
+<div id="pw-box">
+<h2>FXY 工具箱</h2>
+<p>请输入访问密码</p>
+<input type="password" id="pw-input" placeholder="密码" autofocus>
+<button onclick="checkPw()">进入</button>
+<div id="pw-err">密码错误</div>
+</div>
+</div>
+
+<div id="app">
+<h1>FXY 学习指挥中心</h1>
+<p class="subtitle">期末冲刺 · 数据驱动 · 一屏掌控</p>
+
+<div id="countdown">
+<div class="days" id="days-left"></div>
+<div class="label">距离期末考试（6月22日）</div>
+</div>
+
+<!-- Live Stats -->
+<div class="stats-row">
+<div class="stat-box"><div class="stat-num" id="s-tasks">-</div><div class="stat-label">今日待办</div></div>
+<div class="stat-box"><div class="stat-num" id="s-study">-</div><div class="stat-label">今日学习(min)</div></div>
+<div class="stat-box"><div class="stat-num" id="s-cards">-</div><div class="stat-label">闪卡待复习</div></div>
+<div class="stat-box"><div class="stat-num" id="s-canvas">-</div><div class="stat-label">Canvas作业</div></div>
+</div>
+
+<!-- GPA Prediction -->
+<div id="gpa-section">
+<h3>GPA 预测（基于当前学习数据）</h3>
+<div class="gpa-row">
+<div class="gpa-chip conservative" id="gpa-con">保守 -</div>
+<div class="gpa-chip moderate" id="gpa-mod">中等 -</div>
+<div class="gpa-chip optimistic" id="gpa-opt">乐观 -</div>
+</div>
+<div id="gpa-advice">加载中...</div>
+</div>
+
+<!-- Tools -->
+<div class="section-title">学习工具</div>
+<div class="grid">
+<a class="card" href="planner.html"><span class="card-icon">📅</span><div class="card-title">每日计划</div><div class="card-desc">AI 自适应计划</div></a>
+<a class="card" href="flashcards.html"><span class="card-icon">🃏</span><div class="card-title">闪卡复习</div><div class="card-desc">250+ 张 · 8科</div></a>
+<a class="card" href="weakness.html"><span class="card-icon">🎯</span><div class="card-title">弱点分析</div><div class="card-desc">AI 知识盲区分析</div></a>
+<a class="card" href="problems.html"><span class="card-icon">📚</span><div class="card-title">AI 题库</div><div class="card-desc">Gemini对话自动提取</div></a>
+<a class="card" href="formulas.html"><span class="card-icon">📐</span><div class="card-title">公式速查</div><div class="card-desc">搜索 · 收藏 · 打印</div></a>
+<a class="card" href="mistakes.html"><span class="card-icon">📝</span><div class="card-title">错题本</div><div class="card-desc">拍照 · LaTeX · 复习</div></a>
+<a class="card" href="focus.html"><span class="card-icon">🍅</span><div class="card-title">专注计时</div><div class="card-desc">番茄钟 · Bark提醒</div></a>
+</div>
+
+<div class="section-title">AI 工具</div>
+<div class="grid">
+<a class="card" href="chat.html"><span class="card-icon">🤖</span><div class="card-title">AI 助手</div><div class="card-desc">RAG 笔记问答</div></a>
+<a class="card" href="task-agent.html"><span class="card-icon">✅</span><div class="card-title">任务智能体</div><div class="card-desc">自然语言建任务</div></a>
+<a class="card" href="dashboard.html"><span class="card-icon">📊</span><div class="card-title">仪表盘</div><div class="card-desc">热力图 · GPA模拟</div></a>
+<a class="card" href="/"><span class="card-icon">📚</span><div class="card-title">笔记全站</div><div class="card-desc">Quartz 知识库</div></a>
+</div>
+
+<div class="footer">
+<a href="/">返回笔记主站</a> · FXY 知识库 · 2026
+</div>
+</div>
+
+<script>
+// Force unregister broken service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => { r.unregister(); console.log('SW unregistered:', r.scope); });
+  });
+}
+
+function checkPw(){
+  if(document.getElementById('pw-input').value==='YOUR_PASSWORD'){
+    document.getElementById('pw-overlay').style.display='none';
+    document.getElementById('app').style.display='';
+    loadDashboard();
+  }else{document.getElementById('pw-err').style.display='block';}
+}
+document.getElementById('pw-input').addEventListener('keydown',e=>{if(e.key==='Enter')checkPw();});
+
+// Always load dashboard data on page load
+setTimeout(loadDashboard, 200);
+
+// Countdown
+const exam = new Date('2026-06-22T09:00:00+08:00');
+function updateCountdown(){
+  const diff = exam - new Date();
+  const days = Math.floor(diff/864e5);
+  const hours = Math.floor((diff%864e5)/36e5);
+  document.getElementById('days-left').textContent = diff > 0 ? days+'天 '+hours+'小时' : '考试加油！';
+}
+updateCountdown(); setInterval(updateCountdown, 60000);
+
+// Load all dashboard data
+async function loadDashboard() {
+  // Tasks
+  fetch('/api/task-projects').then(r=>r.json()).then(d=>{
+    if(d.projects){
+      const total = d.projects.reduce((a,p) => a + (p.pending||0), 0);
+      const el = document.getElementById('s-tasks');
+      el.textContent = total;
+      el.className = 'stat-num' + (total > 6 ? ' red' : total > 3 ? ' yellow' : ' green');
+    }
+  }).catch(()=>{});
+
+  // Study stats (today)
+  fetch('/api/study-stats').then(r=>r.json()).then(d=>{
+    const today = new Date().toISOString().slice(0,10);
+    const todayData = d.logs?.[today];
+    let total = 0;
+    if(todayData) total = Object.values(todayData).reduce((a,b)=>a+b,0);
+    const el = document.getElementById('s-study');
+    el.textContent = total;
+    el.className = 'stat-num' + (total >= 120 ? ' green' : total >= 60 ? ' yellow' : '');
+  }).catch(()=>{});
+
+  // Flashcards
+  fetch('/api/flashcards').then(r=>r.json()).then(d=>{
+    const unsynced = d.cards ? d.cards.length : (d.total || 0);
+    document.getElementById('s-cards').textContent = unsynced;
+  }).catch(()=>{});
+
+  // Canvas
+  fetch('/api/canvas').then(r=>r.json()).then(d=>{
+    const items = d.assignments || (Array.isArray(d) ? d : []);
+    const el = document.getElementById('s-canvas');
+    el.textContent = items.length;
+    el.className = 'stat-num' + (items.length > 5 ? ' red' : items.length > 2 ? ' yellow' : '');
+  }).catch(()=>{});
+
+  // GPA Prediction (may take 30-60s due to AI call)
+  const gpaController = new AbortController();
+  setTimeout(() => gpaController.abort(), 90000);
+  fetch('/api/gpa-predict', {signal: gpaController.signal}).then(r=>r.json()).then(d=>{
+    const gpa = d.gpa || {};
+    const fmt = v => typeof v === 'number' ? v.toFixed(2) : '-';
+    document.getElementById('gpa-con').textContent = '保守 ' + fmt(gpa.conservative);
+    document.getElementById('gpa-mod').textContent = '中等 ' + fmt(gpa.moderate);
+    document.getElementById('gpa-opt').textContent = '乐观 ' + fmt(gpa.optimistic);
+    document.getElementById('gpa-advice').textContent = d.advice || '';
+
+    // Color the moderate chip based on target
+    const mod = gpa.moderate || 0;
+    const modEl = document.getElementById('gpa-mod');
+    if(mod >= 3.4) modEl.style.color = 'var(--green)';
+    else if(mod >= 3.0) modEl.style.color = 'var(--yellow)';
+    else modEl.style.color = 'var(--red)';
+  }).catch(()=>{
+    document.getElementById('gpa-advice').textContent = 'GPA 预测加载超时，刷新重试';
+  });
+  document.getElementById('gpa-advice').textContent = 'AI 正在计算（约30秒）...';
+}
+</script>
+</body>
+</html>

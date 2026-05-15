@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>期末冲刺仪表盘</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg1:#0f0c29;--bg2:#302b63;--bg3:#24243e;--card:#1a1a3e;--accent:#6c63ff;--accent2:#ff6584;--text:#e0e0e0;--text2:#aaa;--green:#4caf50;--orange:#ff9800;--border:rgba(255,255,255,0.08)}
+body{font-family:'Segoe UI','Microsoft YaHei',sans-serif;background:linear-gradient(135deg,var(--bg1),var(--bg2),var(--bg3));color:var(--text);min-height:100vh}
+#login-overlay{position:fixed;inset:0;background:linear-gradient(135deg,var(--bg1),var(--bg2));display:flex;align-items:center;justify-content:center;z-index:9999}
+.login-box{background:var(--card);padding:40px;border-radius:16px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+.login-box h2{margin-bottom:20px;font-size:24px}
+.login-box input{padding:12px 20px;border:2px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.05);color:#fff;font-size:16px;width:260px;outline:none}
+.login-box input:focus{border-color:var(--accent)}
+.login-box button{margin-top:16px;padding:12px 36px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-size:16px;cursor:pointer}
+.login-box .err{color:var(--accent2);margin-top:10px;font-size:14px;min-height:20px}
+.container{max-width:1100px;margin:0 auto;padding:20px}
+header{text-align:center;padding:30px 0 10px}
+header h1{font-size:28px;background:linear-gradient(90deg,#6c63ff,#ff6584);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+header p.quote{margin-top:10px;font-size:15px;color:var(--text2);font-style:italic;min-height:22px}
+.countdown-section{background:var(--card);border-radius:16px;padding:30px;margin:20px 0;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.3)}
+.countdown-section h2{font-size:18px;color:var(--text2);margin-bottom:16px}
+.countdown-nums{display:flex;justify-content:center;gap:20px;flex-wrap:wrap}
+.countdown-nums .unit{display:flex;flex-direction:column;align-items:center}
+.countdown-nums .num{font-size:48px;font-weight:700;background:linear-gradient(135deg,#6c63ff,#ff6584);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.1;transition:transform .3s}
+.countdown-nums .label{font-size:13px;color:var(--text2);margin-top:4px}
+.section-title{font-size:20px;font-weight:600;margin:28px 0 14px;padding-left:12px;border-left:4px solid var(--accent)}
+.subjects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.subj-card{background:var(--card);border-radius:12px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,0.2);transition:transform .2s}
+.subj-card:hover{transform:translateY(-2px)}
+.subj-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.subj-name{font-size:16px;font-weight:600}
+.subj-credits{font-size:12px;color:var(--accent);background:rgba(108,99,255,0.15);padding:2px 8px;border-radius:20px}
+.subj-meta{font-size:12px;color:var(--text2);margin-bottom:10px}
+.progress-bar{height:8px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden;margin-bottom:6px}
+.progress-fill{height:100%;border-radius:4px;transition:width .4s;background:linear-gradient(90deg,var(--accent),#ff6584)}
+.slider-row{display:flex;align-items:center;gap:10px}
+.slider-row input[type=range]{flex:1;accent-color:var(--accent);cursor:pointer}
+.slider-row .pct{font-size:14px;font-weight:600;min-width:40px;text-align:right}
+.gpa-section{background:var(--card);border-radius:12px;padding:24px;margin:20px 0;box-shadow:0 2px 12px rgba(0,0,0,0.2)}
+.gpa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:16px}
+.gpa-row{display:flex;align-items:center;gap:10px}
+.gpa-row label{font-size:14px;flex:1}
+.gpa-row input[type=number]{width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:rgba(255,255,255,0.05);color:#fff;font-size:14px;text-align:center;outline:none}
+.gpa-row input:focus{border-color:var(--accent)}
+.gpa-result{text-align:center;font-size:22px;font-weight:700;padding:12px;background:rgba(108,99,255,0.1);border-radius:10px}
+.gpa-result span{background:linear-gradient(90deg,#6c63ff,#ff6584);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.timer-section{background:var(--card);border-radius:12px;padding:24px;margin:20px 0;box-shadow:0 2px 12px rgba(0,0,0,0.2)}
+.timer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.timer-row{display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px}
+.timer-row .t-name{flex:1;font-size:14px}
+.timer-row .t-time{font-size:14px;font-weight:600;min-width:70px;text-align:center;color:var(--green)}
+.timer-row button{padding:6px 14px;border:none;border-radius:6px;font-size:13px;cursor:pointer;color:#fff}
+.btn-start{background:var(--green)}
+.btn-stop{background:var(--accent2)}
+.btn-reset{background:rgba(255,255,255,0.1);font-size:12px!important;padding:4px 10px!important}
+.heatmap-section{background:var(--card);border-radius:12px;padding:24px;margin:20px 0;box-shadow:0 2px 12px rgba(0,0,0,0.2)}
+.heatmap-container{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-top:12px}
+.heatmap-grid{display:grid;grid-template-rows:repeat(7,1fr);grid-auto-flow:column;gap:3px}
+.heatmap-cell{width:16px;height:16px;border-radius:3px;background:rgba(255,255,255,0.06);transition:background .3s}
+.heatmap-cell.l1{background:rgba(108,99,255,0.25)}
+.heatmap-cell.l2{background:rgba(108,99,255,0.45)}
+.heatmap-cell.l3{background:rgba(108,99,255,0.65)}
+.heatmap-cell.l4{background:rgba(108,99,255,0.9)}
+.heatmap-legend{display:flex;align-items:center;gap:6px;justify-content:center;margin-top:10px;font-size:12px;color:var(--text2)}
+.heatmap-legend .cell{width:14px;height:14px;border-radius:2px;display:inline-block}
+.day-labels{display:grid;grid-template-rows:repeat(7,1fr);gap:3px;font-size:10px;color:var(--text2);margin-right:4px}
+.day-labels span{height:16px;display:flex;align-items:center}
+.heatmap-wrapper{display:flex;justify-content:center;align-items:start;margin-top:12px}
+footer{text-align:center;padding:30px 0;font-size:12px;color:var(--text2)}
+@media(max-width:600px){
+.countdown-nums .num{font-size:32px}
+.subjects-grid,.gpa-grid,.timer-grid{grid-template-columns:1fr}
+.container{padding:12px}
+header h1{font-size:22px}
+}
+</style>
+</head>
+<body>
+
+<div id="login-overlay">
+<div class="login-box">
+<h2>🔒 期末冲刺仪表盘</h2>
+<p style="color:#aaa;margin-bottom:20px;font-size:14px">请输入密码以访问</p>
+<input type="password" id="pwd-input" placeholder="输入密码..." onkeydown="if(event.key==='Enter')doLogin()">
+<br>
+<button onclick="doLogin()">进 入</button>
+<div class="err" id="pwd-err"></div>
+</div>
+</div>
+
+<div class="container" id="main-app" style="display:none">
+<header>
+<h1>📚 期末冲刺仪表盘</h1>
+<p class="quote" id="quote"></p>
+</header>
+
+<div class="countdown-section">
+<h2>距离期末考试（2026年6月22日）</h2>
+<div class="countdown-nums">
+<div class="unit"><span class="num" id="cd-days">--</span><span class="label">天</span></div>
+<div class="unit"><span class="num" id="cd-hours">--</span><span class="label">时</span></div>
+<div class="unit"><span class="num" id="cd-mins">--</span><span class="label">分</span></div>
+<div class="unit"><span class="num" id="cd-secs">--</span><span class="label">秒</span></div>
+</div>
+</div>
+
+<h3 class="section-title">各科复习进度</h3>
+<div class="subjects-grid" id="subjects-grid"></div>
+
+<h3 class="section-title">GPA 模拟器</h3>
+<div class="gpa-section">
+<div class="gpa-grid" id="gpa-grid"></div>
+<div class="gpa-result">预估加权 GPA：<span id="gpa-val">--</span></div>
+</div>
+
+<h3 class="section-title">学习计时器</h3>
+<div class="timer-section">
+<div class="timer-grid" id="timer-grid"></div>
+</div>
+
+<h3 class="section-title">近8周学习热力图</h3>
+<div class="heatmap-section">
+<div class="heatmap-wrapper">
+<div class="day-labels">
+<span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+</div>
+<div class="heatmap-grid" id="heatmap-grid"></div>
+</div>
+<div class="heatmap-legend">
+<span>少</span>
+<span class="cell" style="background:rgba(255,255,255,0.06)"></span>
+<span class="cell" style="background:rgba(108,99,255,0.25)"></span>
+<span class="cell" style="background:rgba(108,99,255,0.45)"></span>
+<span class="cell" style="background:rgba(108,99,255,0.65)"></span>
+<span class="cell" style="background:rgba(108,99,255,0.9)"></span>
+<span>多</span>
+</div>
+</div>
+
+<footer>FXY 期末冲刺 2026 · 交大生科 · 加油💪</footer>
+</div>
+
+<script>
+// --- Password ---
+const PASS_HASH = 'YOUR_PASSWORD';
+function doLogin(){
+  const v = document.getElementById('pwd-input').value;
+  if(v === PASS_HASH){
+    document.getElementById('login-overlay').style.display='none';
+    document.getElementById('main-app').style.display='block';
+    sessionStorage.setItem('dash_auth','1');
+  } else {
+    document.getElementById('pwd-err').textContent='密码错误，请重试';
+  }
+}
+if(sessionStorage.getItem('dash_auth')==='1'){
+  document.getElementById('login-overlay').style.display='none';
+  document.getElementById('main-app').style.display='block';
+}
+
+// --- Data ---
+const SUBJECTS = [
+  {id:'gaoshu',name:'高等数学II',credits:4,meta:'期中70，目标85+',target:85},
+  {id:'youji',name:'有机化学',credits:4,meta:'目标85-90',target:88},
+  {id:'gailv',name:'概率统计',credits:3,meta:'目标80-85',target:83},
+  {id:'wuli',name:'大学物理',credits:3,meta:'目标85-90',target:88},
+  {id:'xijinping',name:'习近平新时代思想',credits:3,meta:'目标80-85',target:83},
+  {id:'fenxi',name:'分析化学',credits:2,meta:'目标75+',target:78},
+  {id:'shengwu',name:'普通生物学',credits:2,meta:'考前背诵',target:80},
+  {id:'ai',name:'人工智能基础',credits:2,meta:'期中考完',target:85},
+  {id:'junshi',name:'军事理论',credits:2,meta:'考前1-2天',target:80},
+];
+
+// --- Quotes ---
+const QUOTES = [
+  '既然选择了远方，便只顾风雨兼程。',
+  '不积跬步，无以至千里；不积小流，无以成江海。',
+  '天道酬勤，功不唐捐。',
+  '书山有路勤为径，学海无涯苦作舟。',
+  '成功的秘诀在于每一天的坚持。',
+  '星光不问赶路人，时光不负有心人。',
+  '你现在的努力，是未来的底气。',
+  '熬过最难的日子，做最酷的自己。',
+  '越努力，越幸运。',
+  '世上无难事，只怕有心人。',
+  '今天的汗水，是明天的勋章。',
+  '自律者自由，自强者自胜。',
+  '每一个不曾起舞的日子，都是对生命的辜负。',
+  '把平凡的事做到极致，就是不平凡。',
+  '所有的努力都不会被辜负。',
+];
+function showQuote(){
+  document.getElementById('quote').textContent = '「' + QUOTES[Math.floor(Math.random()*QUOTES.length)] + '」';
+}
+showQuote(); setInterval(showQuote, 15000);
+
+// --- Countdown ---
+const EXAM_DATE = new Date('2026-06-22T08:00:00+08:00');
+function updateCountdown(){
+  const now = new Date();
+  let diff = EXAM_DATE - now;
+  if(diff < 0) diff = 0;
+  const d = Math.floor(diff/86400000);
+  const h = Math.floor((diff%86400000)/3600000);
+  const m = Math.floor((diff%3600000)/60000);
+  const s = Math.floor((diff%60000)/1000);
+  document.getElementById('cd-days').textContent = d;
+  document.getElementById('cd-hours').textContent = String(h).padStart(2,'0');
+  document.getElementById('cd-mins').textContent = String(m).padStart(2,'0');
+  document.getElementById('cd-secs').textContent = String(s).padStart(2,'0');
+}
+updateCountdown(); setInterval(updateCountdown, 1000);
+
+// --- Progress ---
+function loadProgress(){
+  const saved = JSON.parse(localStorage.getItem('dash_progress') || '{}');
+  return saved;
+}
+function saveProgress(id, val){
+  const p = loadProgress();
+  p[id] = val;
+  localStorage.setItem('dash_progress', JSON.stringify(p));
+}
+function renderSubjects(){
+  const grid = document.getElementById('subjects-grid');
+  const progress = loadProgress();
+  grid.innerHTML = '';
+  SUBJECTS.forEach(s => {
+    const pct = progress[s.id] || 0;
+    const card = document.createElement('div');
+    card.className = 'subj-card';
+    card.innerHTML = `
+      <div class="subj-header">
+        <span class="subj-name">${s.name}</span>
+        <span class="subj-credits">${s.credits}学分</span>
+      </div>
+      <div class="subj-meta">${s.meta}</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="slider-row">
+        <input type="range" min="0" max="100" value="${pct}" oninput="onSlider('${s.id}',this)">
+        <span class="pct" id="pct-${s.id}">${pct}%</span>
+      </div>`;
+    grid.appendChild(card);
+  });
+}
+function onSlider(id, el){
+  const v = parseInt(el.value);
+  saveProgress(id, v);
+  document.getElementById('pct-'+id).textContent = v+'%';
+  el.closest('.subj-card').querySelector('.progress-fill').style.width = v+'%';
+}
+renderSubjects();
+
+// --- GPA Simulator ---
+function scoreToGP(score){
+  if(score>=95) return 4.3;
+  if(score>=90) return 4.0;
+  if(score>=85) return 3.7;
+  if(score>=80) return 3.3;
+  if(score>=75) return 3.0;
+  if(score>=70) return 2.7;
+  if(score>=67) return 2.3;
+  if(score>=65) return 2.0;
+  if(score>=62) return 1.7;
+  if(score>=60) return 1.0;
+  return 0;
+}
+function renderGPA(){
+  const grid = document.getElementById('gpa-grid');
+  const saved = JSON.parse(localStorage.getItem('dash_gpa_scores') || '{}');
+  grid.innerHTML = '';
+  SUBJECTS.forEach(s => {
+    const val = saved[s.id] || s.target;
+    const row = document.createElement('div');
+    row.className = 'gpa-row';
+    row.innerHTML = `<label>${s.name}（${s.credits}分）</label><input type="number" min="0" max="100" value="${val}" data-id="${s.id}" onchange="calcGPA()" oninput="calcGPA()">`;
+    grid.appendChild(row);
+  });
+  calcGPA();
+}
+function calcGPA(){
+  let totalW = 0, totalC = 0;
+  const scores = {};
+  document.querySelectorAll('#gpa-grid input[type=number]').forEach(inp => {
+    const id = inp.dataset.id;
+    const sc = parseInt(inp.value) || 0;
+    scores[id] = sc;
+    const subj = SUBJECTS.find(s=>s.id===id);
+    totalW += scoreToGP(sc) * subj.credits;
+    totalC += subj.credits;
+  });
+  localStorage.setItem('dash_gpa_scores', JSON.stringify(scores));
+  const gpa = totalC ? (totalW/totalC).toFixed(2) : '--';
+  document.getElementById('gpa-val').textContent = gpa;
+}
+renderGPA();
+
+// --- Study Timer ---
+let timers = JSON.parse(localStorage.getItem('dash_timers') || '{}');
+let activeTimers = {};
+
+function fmtTime(ms){
+  const h = Math.floor(ms/3600000);
+  const m = Math.floor((ms%3600000)/60000);
+  const s = Math.floor((ms%60000)/1000);
+  return `${h}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+}
+function renderTimers(){
+  const grid = document.getElementById('timer-grid');
+  grid.innerHTML = '';
+  SUBJECTS.forEach(s => {
+    const acc = timers[s.id] || 0;
+    const row = document.createElement('div');
+    row.className = 'timer-row';
+    const isRunning = !!activeTimers[s.id];
+    row.innerHTML = `
+      <span class="t-name">${s.name}</span>
+      <span class="t-time" id="tt-${s.id}">${fmtTime(acc)}</span>
+      <button class="${isRunning?'btn-stop':'btn-start'}" onclick="toggleTimer('${s.id}')">${isRunning?'停止':'开始'}</button>
+      <button class="btn-reset" onclick="resetTimer('${s.id}')">清零</button>`;
+    grid.appendChild(row);
+  });
+}
+function toggleTimer(id){
+  if(activeTimers[id]){
+    // stop
+    const elapsed = Date.now() - activeTimers[id];
+    timers[id] = (timers[id]||0) + elapsed;
+    delete activeTimers[id];
+    localStorage.setItem('dash_timers', JSON.stringify(timers));
+    recordHeatmap(elapsed);
+  } else {
+    activeTimers[id] = Date.now();
+  }
+  renderTimers();
+}
+function resetTimer(id){
+  delete timers[id];
+  delete activeTimers[id];
+  localStorage.setItem('dash_timers', JSON.stringify(timers));
+  renderTimers();
+}
+function tickTimers(){
+  SUBJECTS.forEach(s => {
+    if(activeTimers[s.id]){
+      const el = document.getElementById('tt-'+s.id);
+      if(el){
+        const acc = (timers[s.id]||0) + (Date.now() - activeTimers[s.id]);
+        el.textContent = fmtTime(acc);
+      }
+    }
+  });
+}
+setInterval(tickTimers, 1000);
+renderTimers();
+
+// --- Heatmap (server + localStorage merge) ---
+let serverStudyData = {};
+async function fetchServerStudyData() {
+  try {
+    const resp = await fetch('/api/study-stats');
+    const data = await resp.json();
+    if (data.logs) {
+      for (const [date, subjects] of Object.entries(data.logs)) {
+        const totalMin = Object.values(subjects).reduce((a,b) => a+b, 0);
+        serverStudyData[date] = totalMin * 60000;
+      }
+      localStorage.setItem('dash_server_study', JSON.stringify(serverStudyData));
+    }
+  } catch(e) {
+    try { serverStudyData = JSON.parse(localStorage.getItem('dash_server_study') || '{}'); } catch(e2) {}
+  }
+  renderHeatmap();
+}
+function getHeatmapData() {
+  const local = JSON.parse(localStorage.getItem('dash_heatmap') || '{}');
+  const merged = { ...local };
+  for (const [date, ms] of Object.entries(serverStudyData)) {
+    merged[date] = Math.max(merged[date] || 0, ms);
+  }
+  return merged;
+}
+function recordHeatmap(ms) {
+  const data = JSON.parse(localStorage.getItem('dash_heatmap') || '{}');
+  const today = new Date().toISOString().slice(0,10);
+  data[today] = (data[today]||0) + ms;
+  localStorage.setItem('dash_heatmap', JSON.stringify(data));
+  renderHeatmap();
+}
+function renderHeatmap() {
+  const grid = document.getElementById('heatmap-grid');
+  grid.innerHTML = '';
+  const data = getHeatmapData();
+  const today = new Date();
+  const startDay = new Date(today);
+  startDay.setDate(startDay.getDate() - 55 - ((startDay.getDay()+6)%7));
+  for (let i = 0; i < 56; i++) {
+    const d = new Date(startDay);
+    d.setDate(d.getDate() + i);
+    const key = d.toISOString().slice(0,10);
+    const ms = data[key] || 0;
+    const hrs = ms / 3600000;
+    let lvl = '';
+    if (hrs >= 3) lvl = 'l4';
+    else if (hrs >= 2) lvl = 'l3';
+    else if (hrs >= 1) lvl = 'l2';
+    else if (hrs > 0) lvl = 'l1';
+    const isFuture = d > today;
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const cell = document.createElement('div');
+    cell.className = 'heatmap-cell' + (lvl ? ' ' + lvl : '');
+    cell.title = key + ': ' + hrs.toFixed(1) + '\u5c0f\u65f6';
+    if (isFuture) cell.style.opacity = '0.3';
+    if (isWeekend) cell.style.borderBottom = '2px solid rgba(108,99,255,0.3)';
+    grid.appendChild(cell);
+  }
+}
+fetchServerStudyData();
+}
+function renderHeatmap(){
+  const grid = document.getElementById('heatmap-grid');
+  grid.innerHTML = '';
+  const data = getHeatmapData();
+  const today = new Date();
+  // 8 weeks = 56 days
+  const cells = [];
+  // find the Monday 8 weeks ago
+  const startDay = new Date(today);
+  startDay.setDate(startDay.getDate() - 55 - ((startDay.getDay()+6)%7));
+  for(let i=0; i<56; i++){
+    const d = new Date(startDay);
+    d.setDate(d.getDate()+i);
+    const key = d.toISOString().slice(0,10);
+    const ms = data[key]||0;
+    const hrs = ms/3600000;
+    let lvl = '';
+    if(hrs>=3) lvl='l4';
+    else if(hrs>=2) lvl='l3';
+    else if(hrs>=1) lvl='l2';
+    else if(hrs>0) lvl='l1';
+    const isFuture = d > today;
+    const cell = document.createElement('div');
+    cell.className = 'heatmap-cell' + (lvl?' '+lvl:'');
+    cell.title = `${key}: ${hrs.toFixed(1)}小时`;
+    if(isFuture) cell.style.opacity='0.3';
+    grid.appendChild(cell);
+  }
+}
+renderHeatmap();
+</script>
+</body>
+</html>

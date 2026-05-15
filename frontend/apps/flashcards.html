@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>闪卡复习</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous">
+
+// ========== Server Flashcard Sync ==========
+async function syncServerCards() {
+  try {
+    const res = await fetch('/api/flashcards');
+    const data = await res.json();
+    if (!data.cards || data.cards.length === 0) return;
+
+    // Check which cards are already in CARDS (by question text)
+    const existingQs = new Set(CARDS.map(c => c.q));
+    const newCards = data.cards.filter(c => !existingQs.has(c.q));
+
+    if (newCards.length === 0) {
+      // All cards already exist, just ack
+      fetch('/api/flashcards/ack', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ids: data.cards.map(c => c.id) })
+      });
+      return;
+    }
+
+    // Add to CARDS array
+    for (const c of newCards) {
+      CARDS.push({ s: c.s, q: c.q, a: c.a });
+    }
+
+    // Ack all cards
+    fetch('/api/flashcards/ack', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ ids: data.cards.map(c => c.id) })
+    });
+
+    // Show notification
+    const badge = document.createElement('div');
+    badge.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#6c5ce7,#00cec9);color:#fff;padding:10px 20px;border-radius:12px;z-index:999;font-size:14px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.3);';
+    badge.textContent = '\u{1F4E5} AI \u751F\u6210\u4E86 ' + newCards.length + ' \u5F20\u65B0\u95EA\u5361';
+    document.body.appendChild(badge);
+    setTimeout(() => badge.remove(), 4000);
+
+    // Rebuild queue
+    buildQueue();
+    renderCard();
+    updateStats();
+    console.log('Synced ' + newCards.length + ' AI flashcards');
+  } catch(e) {
+    console.error('Flashcard sync error:', e);
+  }
+}
+
+// Sync on page load (after a short delay to let the page initialize)
+setTimeout(syncServerCards, 1500);
+</script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+<style>
+:root{--bg:#f0f2f5;--card-bg:#fff;--text:#1a1a2e;--text2:#555;--primary:#6c5ce7;--primary2:#a29bfe;--accent:#00cec9;--shadow:0 8px 32px rgba(0,0,0,.1);--radius:20px}
+[data-theme=dark]{--bg:#0f0f1a;--card-bg:#1a1a2e;--text:#e0e0e0;--text2:#aaa;--primary:#a29bfe;--primary2:#6c5ce7;--accent:#00cec9;--shadow:0 8px 32px rgba(0,0,0,.4)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background .3s,color .3s;overflow-x:hidden}
+.header{background:linear-gradient(135deg,var(--primary),var(--accent));padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.header h1{color:#fff;font-size:1.3em}
+.header-btns{display:flex;gap:8px}
+.header-btns button{background:rgba(255,255,255,.2);border:none;color:#fff;padding:8px 12px;border-radius:10px;cursor:pointer;font-size:.9em;backdrop-filter:blur(4px)}
+.header-btns button:hover{background:rgba(255,255,255,.35)}
+.header-btns button.active{background:rgba(255,255,255,.45)}
+.stats-bar{display:flex;gap:12px;padding:12px 20px;overflow-x:auto;flex-wrap:nowrap}
+.stat-card{background:var(--card-bg);border-radius:14px;padding:12px 16px;min-width:100px;text-align:center;box-shadow:var(--shadow);flex-shrink:0}
+.stat-card .num{font-size:1.6em;font-weight:700;background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat-card .label{font-size:.75em;color:var(--text2);margin-top:2px}
+.filters{padding:10px 20px;display:flex;gap:8px;overflow-x:auto;flex-wrap:wrap}
+.filters button{padding:6px 14px;border-radius:20px;border:2px solid var(--primary);background:transparent;color:var(--primary);font-size:.85em;cursor:pointer;transition:.2s;white-space:nowrap}
+.filters button.active{background:var(--primary);color:#fff}
+.card-container{display:flex;justify-content:center;align-items:center;padding:20px;min-height:50vh;perspective:1000px}
+.card-wrapper{width:100%;max-width:500px;min-height:280px;position:relative;cursor:pointer}
+.card-inner{position:relative;width:100%;min-height:280px;transition:transform .6s;transform-style:preserve-3d}
+.card-inner.flipped{transform:rotateY(180deg)}
+.card-front,.card-back{position:absolute;width:100%;min-height:280px;backface-visibility:hidden;border-radius:var(--radius);padding:28px 24px;box-shadow:var(--shadow);display:flex;flex-direction:column;justify-content:center}
+.card-front{background:linear-gradient(145deg,var(--card-bg),var(--card-bg));border:2px solid rgba(108,92,231,.15)}
+.card-back{background:linear-gradient(145deg,var(--primary),var(--accent));color:#fff;transform:rotateY(180deg)}
+.card-front .q-label{font-size:.7em;color:var(--accent);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px}
+.card-content{font-size:1.05em;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.card-subject{position:absolute;top:12px;right:16px;font-size:.7em;padding:3px 10px;border-radius:10px;background:rgba(108,92,231,.1);color:var(--primary)}
+.card-back .card-subject{background:rgba(255,255,255,.2);color:#fff}
+.card-num{position:absolute;bottom:12px;right:16px;font-size:.75em;color:var(--text2)}
+.card-back .card-num{color:rgba(255,255,255,.7)}
+.btn-row{display:flex;justify-content:center;gap:12px;padding:0 20px 20px}
+.btn-row button{flex:1;max-width:140px;padding:14px 10px;border:none;border-radius:14px;font-size:.95em;font-weight:600;cursor:pointer;transition:.2s;color:#fff}
+.btn-row button:active{transform:scale(.95)}
+.btn-hard{background:linear-gradient(135deg,#e17055,#d63031)}
+.btn-medium{background:linear-gradient(135deg,#fdcb6e,#e17055);color:#333!important}
+.btn-easy{background:linear-gradient(135deg,#00b894,#00cec9)}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text2)}
+.empty-state .emoji{font-size:3em;margin-bottom:16px}
+.panel{position:fixed;top:0;right:-100%;width:min(380px,90vw);height:100%;background:var(--card-bg);box-shadow:-4px 0 20px rgba(0,0,0,.2);z-index:200;transition:right .3s;overflow-y:auto;padding:20px}
+.panel.open{right:0}
+.panel-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:199;display:none}
+.panel-overlay.open{display:block}
+.panel h2{margin-bottom:16px;font-size:1.2em}
+.panel .close-btn{position:absolute;top:12px;right:16px;font-size:1.5em;cursor:pointer;background:none;border:none;color:var(--text)}
+.mastery-item{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.mastery-bar-bg{flex:1;height:10px;background:rgba(108,92,231,.1);border-radius:5px;overflow:hidden}
+.mastery-bar{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--primary),var(--accent));transition:width .5s}
+.mastery-label{min-width:60px;font-size:.85em}
+.mastery-pct{min-width:40px;font-size:.85em;text-align:right;color:var(--text2)}
+.tap-hint{text-align:center;color:var(--text2);font-size:.8em;margin-top:-10px;margin-bottom:10px}
+.streak-badge{display:inline-flex;align-items:center;gap:4px}
+@media(max-width:500px){.card-front,.card-back{padding:22px 18px;min-height:240px}.header h1{font-size:1.1em}}
+</style>
+</head>
+<body data-theme="light">
+<div class="header">
+<h1>闪卡复习</h1>
+<div class="header-btns">
+<button onclick="toggleToday()" id="btnToday">今日复习</button>
+<button onclick="openPanel()">统计</button>
+<button onclick="toggleTheme()" id="btnTheme">🌙</button>
+</div>
+</div>
+<div class="stats-bar">
+<div class="stat-card"><div class="num" id="sTotal">0</div><div class="label">总卡片</div></div>
+<div class="stat-card"><div class="num" id="sDue">0</div><div class="label">待复习</div></div>
+<div class="stat-card"><div class="num" id="sDone">0</div><div class="label">已完成</div></div>
+<div class="stat-card"><div class="num" id="sStreak">0</div><div class="label">连续天数</div></div>
+</div>
+<div class="filters" id="filters"></div>
+<div class="card-container" id="cardArea"></div>
+<div class="tap-hint" id="tapHint">点击卡片翻转查看答案</div>
+<div class="btn-row" id="btnRow" style="display:none">
+<button class="btn-hard" onclick="rate('hard')">困难</button>
+<button class="btn-medium" onclick="rate('medium')">一般</button>
+<button class="btn-easy" onclick="rate('easy')">简单</button>
+</div>
+<div class="panel-overlay" id="panelOverlay" onclick="closePanel()"></div>
+<div class="panel" id="panel">
+<button class="close-btn" onclick="closePanel()">&times;</button>
+<h2>学习统计</h2>
+<div id="masteryList"></div>
+</div>
+<script>
+const CARDS=[
+{s:"高数",q:"f(x,y) 在某点连续、可偏导、可微、偏导连续，四者从强到弱的排序是？",a:"偏导连续 → 可微 → 连续\n偏导连续 → 可微 → 可偏导\n注意：可偏导 ≠> 连续，连续 ≠> 可偏导"},
+{s:"高数",q:"f(x,y) 可微的充分条件是什么？",a:"偏导数 f_x, f_y 在该点连续（偏导连续 ⇒ 可微）"},
+{s:"高数",q:"f(x,y) 可微的必要条件是什么？",a:"f 在该点连续，且 f_x, f_y 存在（可微 ⇒ 连续 + 可偏导）"},
+{s:"高数",q:"举例说明：偏导数存在但函数不连续的情况？",a:"f(x,y) = xy/(x²+y²)（原点外），f(0,0)=0\n沿坐标轴趋近原点极限为0，但沿 y=x 趋近极限为1/2 ≠ 0，不连续\n而 f_x(0,0) = f_y(0,0) = 0 存在"},
+{s:"高数",q:"极坐标下二重积分的面积元素 dA = ？",a:"dA = r dr dθ"},
+{s:"高数",q:"柱坐标 (r, θ, z) 下的体积元素 dV = ？",a:"dV = r dr dθ dz"},
+{s:"高数",q:"球坐标 (ρ, φ, θ) 下的体积元素 dV = ？（φ为极角，θ为方位角）",a:"dV = ρ² sin φ dρ dφ dθ"},
+{s:"高数",q:"球坐标中 x, y, z 用 (ρ, φ, θ) 怎么表示？",a:"x = ρ sinφ cosθ\ny = ρ sinφ sinθ\nz = ρ cosφ\n（φ ∈ [0,π]，θ ∈ [0,2π]）"},
+{s:"高数",q:"Green 公式的条件和形式？",a:"条件：D 为平面有界闭区域，∂D 为分段光滑正向边界，P、Q 在 D 上有连续一阶偏导\n公式：∮(Pdx + Qdy) = ∬_D (∂Q/∂x − ∂P/∂y) dA"},
+{s:"高数",q:"Gauss 公式（散度定理）的形式？",a:"∯_S (Pdydz + Qdzdx + Rdxdy) = ∭_Ω (∂P/∂x + ∂Q/∂y + ∂R/∂z) dV\n条件：Ω 为空间有界闭区域，S 为其外侧边界曲面"},
+{s:"高数",q:"Stokes 公式的形式？",a:"∮_L (Pdx + Qdy + Rdz) = ∬_S [(∂R/∂y−∂Q/∂z)dydz + (∂P/∂z−∂R/∂x)dzdx + (∂Q/∂x−∂P/∂y)dxdy]\n条件：S 为以 L 为边界的有向曲面，P,Q,R 有连续偏导"},
+{s:"高数",q:"e^x 的 Maclaurin 展开？",a:"e^x = 1 + x + x²/2! + x³/3! + ... = Σ(n=0→∞) xⁿ/n!\n收敛域：(-∞, +∞)"},
+{s:"高数",q:"sin x 的 Maclaurin 展开？",a:"sin x = x − x³/3! + x⁵/5! − ... = Σ(n=0→∞) (−1)ⁿ x^(2n+1)/(2n+1)!\n收敛域：(-∞, +∞)"},
+{s:"高数",q:"cos x 的 Maclaurin 展开？",a:"cos x = 1 − x²/2! + x⁴/4! − ... = Σ(n=0→∞) (−1)ⁿ x^(2n)/(2n)!\n收敛域：(-∞, +∞)"},
+{s:"高数",q:"ln(1+x) 的 Maclaurin 展开？",a:"ln(1+x) = x − x²/2 + x³/3 − ... = Σ(n=1→∞) (−1)^(n−1) xⁿ/n\n收敛域：(−1, 1]"},
+{s:"高数",q:"1/(1−x) 的 Maclaurin 展开？",a:"1/(1−x) = 1 + x + x² + x³ + ... = Σ(n=0→∞) xⁿ\n收敛域：(−1, 1)"},
+{s:"高数",q:"(1+x)^α 的 Maclaurin 展开（前几项）？",a:"(1+x)^α = 1 + αx + α(α−1)x²/2! + α(α−1)(α−2)x³/3! + ...\n收敛域：当 α > 0 时 [−1,1]；当 −1 < α < 0 时 (−1,1]；当 α ≤ −1 时 (−1,1)"},
+{s:"高数",q:"幂级数 Σaₙxⁿ 的收敛半径公式（比值法）？",a:"R = lim(n→∞) |aₙ/aₙ₊₁|\n或等价地：1/R = lim(n→∞) |aₙ₊₁/aₙ|"},
+{s:"高数",q:"幂级数 Σaₙxⁿ 的收敛半径公式（根值法）？",a:"1/R = lim(n→∞) ⁿ√|aₙ|\n即 R = 1 / lim(n→∞) |aₙ|^(1/n)"},
+{s:"高数",q:"求收敛半径后，还需要做什么才能确定收敛域？",a:"需要单独检验端点 x = ±R 处级数是否收敛（代入检验，通常用 Leibniz 判别法或 p-级数）"},
+{s:"高数",q:"Fourier 系数 a₀, aₙ, bₙ 的公式？（周期 2L）",a:"a₀ = (1/L) ∫_{-L}^{L} f(x) dx\naₙ = (1/L) ∫_{-L}^{L} f(x) cos(nπx/L) dx\nbₙ = (1/L) ∫_{-L}^{L} f(x) sin(nπx/L) dx"},
+{s:"高数",q:"奇函数的 Fourier 展开有什么特点？",a:"只含 sin 项（正弦级数），a₀ = 0，aₙ = 0\nbₙ = (2/L) ∫₀ᴸ f(x) sin(nπx/L) dx"},
+{s:"高数",q:"偶函数的 Fourier 展开有什么特点？",a:"只含 cos 项（余弦级数），bₙ = 0\na₀ = (2/L) ∫₀ᴸ f(x) dx\naₙ = (2/L) ∫₀ᴸ f(x) cos(nπx/L) dx"},
+{s:"高数",q:"Fourier 级数在间断点处收敛到什么值？",a:"收敛到 [f(x⁺) + f(x⁻)] / 2（左右极限的平均值）"},
+{s:"高数",q:"交换二重积分次序时，最关键的步骤是什么？",a:"画出积分区域 D 的图形，然后改为先对另一个变量积分，重新确定积分限"},
+{s:"高数",q:"判断级数 Σ(−1)ⁿ aₙ 收敛的 Leibniz 判别法条件？",a:"① aₙ 单调递减\n② lim(n→∞) aₙ = 0\n则级数收敛"},
+{s:"高数",q:"什么是条件收敛？什么是绝对收敛？",a:"绝对收敛：Σ|aₙ| 收敛\n条件收敛：Σaₙ 收敛但 Σ|aₙ| 发散\n绝对收敛 ⇒ 收敛，反之不然"},
+{s:"高数",q:"多元函数极值的必要条件？",a:"f_x = 0 且 f_y = 0（驻点条件）"},
+{s:"高数",q:"二元函数驻点处的充分条件判别法（AC−B²法）？",a:"设 A = f_xx, B = f_xy, C = f_yy\nΔ = AC − B²\nΔ > 0 且 A > 0 → 极小值\nΔ > 0 且 A < 0 → 极大值\nΔ < 0 → 鞍点\nΔ = 0 → 无法判断"},
+{s:"高数",q:"曲线积分 ∮Pdx+Qdy 与路径无关的条件？（单连通域）",a:"∂P/∂y = ∂Q/∂x 在区域内处处成立"},
+{s:"高数",q:"第二类曲面积分中，取外侧 vs 内侧如何影响结果？",a:"改变曲面方向（外侧↔内侧）等价于积分变号。计算时需确定法向量方向与题目要求一致"},
+{s:"高数",q:"三重积分化为累次积分的\"投影法\"适用于什么情况？",a:"适用于积分区域可以向某坐标平面投影，且上下界面可以用函数表示的情况（如 z₁(x,y) ≤ z ≤ z₂(x,y)）"},
+{s:"高数",q:"将 ∫∫_D f(x,y)dA 化为极坐标时，积分限怎么确定？",a:"外层对 θ：确定射线扫过区域的角度范围\n内层对 r：对于每个固定 θ，确定 r 从哪到哪（由区域边界方程化为极坐标后得到）"},
+{s:"高数",q:"散度 div F 的物理意义？",a:"表示向量场 F 在某点的\"源\"的强度——单位体积内通量的净流出率。div F > 0 为源，< 0 为汇"},
+{s:"高数",q:"旋度 curl F 的物理意义？",a:"表示向量场 F 在某点的\"旋转\"趋势——环流面密度最大的方向和大小"},
+{s:"高数",q:"∂(x,y)/∂(u,v) 是什么？在换元积分中怎么用？",a:"Jacobi 行列式 J = |∂x/∂u  ∂x/∂v; ∂y/∂u  ∂y/∂v|\n换元后 dxdy = |J| dudv"},
+{s:"高数",q:"p-级数 Σ1/nᵖ 的收敛性？",a:"p > 1 时收敛，p ≤ 1 时发散\n特别地：p=1 为调和级数，发散"},
+{s:"高数",q:"∫₀^{+∞} e^{−x²} dx = ？",a:"√π / 2\n（Gauss 积分/概率积分，常用结论）"},
+{s:"高数",q:"对坐标的曲面积分（第二类）中，dydz 代表什么？",a:"曲面面积元素在 yOz 平面上的投影。计算时：∬ P dydz = ∬ P(x(y,z), y, z) · (±1) dydz，符号由法向量 x 分量正负决定"},
+{s:"高数",q:"用 Green 公式计算面积的技巧？",a:"面积 S = ½ ∮(xdy − ydx)\n取 P = −y, Q = x，则 ∂Q/∂x − ∂P/∂y = 2，代入 Green 公式得 ∮(−ydx+xdy) = 2S"},
+{s:"高数",q:"幂级数逐项求导/逐项积分后，收敛半径是否改变？",a:"收敛半径 R 不变，但端点收敛性可能改变（需重新检验端点）"},
+{s:"有机",q:"马氏规则（Markovnikov）加成的内容？",a:"不对称烯烃与 HX 加成时，H 加到含氢较多的碳上，X 加到含氢较少的碳上\n本质：生成更稳定的碳正离子中间体（3° > 2° > 1°）"},
+{s:"有机",q:"反马氏加成在什么条件下发生？举例？",a:"① HBr + 过氧化物（ROOR）引发自由基加成 → H 加到含氢少的碳\n② 硼氢化-氧化（BH₃·THF → H₂O₂/NaOH）→ OH 加到含氢多的碳（syn 加成）\n注意：只有 HBr 有效，HCl/HI 不行"},
+{s:"有机",q:"SN2 反应的特征？（底物/亲核试剂/溶剂/立体化学/速率）",a:"底物：甲基 > 1° > 2°（3°不反应）\n亲核试剂：强亲核试剂\n溶剂：极性非质子溶剂（DMF, DMSO, acetone）\n立体化学：Walden 翻转（构型反转）\n速率：v = k[底物][Nu⁻]，双分子"},
+{s:"有机",q:"SN1 反应的特征？",a:"底物：3° > 2° > 1°（甲基不反应）\n亲核试剂：弱亲核试剂也行\n溶剂：极性质子溶剂（水、醇）\n立体化学：消旋化（但不一定严格 50:50）\n速率：v = k[底物]，单分子，经碳正离子中间体"},
+{s:"有机",q:"E2 反应的特征？",a:"底物：3° > 2° > 1°\n条件：强碱（NaOEt, t-BuOK）\n立体化学：反式共平面消除（anti-periplanar）\n速率：v = k[底物][碱]，双分子\n产物：Zaitsev 规则（主产物为多取代烯烃）"},
+{s:"有机",q:"E1 反应的特征？",a:"底物：3° > 2°\n条件：弱碱或无碱，极性质子溶剂，加热\n立体化学：无要求（经碳正离子）\n速率：v = k[底物]，单分子\n产物：Zaitsev 产物为主"},
+{s:"有机",q:"3°卤代烃 + 强碱（如 NaOEt）→ 主要发生什么反应？",a:"E2 消除反应（3°底物空间位阻大，亲核取代受阻）"},
+{s:"有机",q:"1°卤代烃 + 强亲核试剂（如 NaCN/DMF）→ 主要发生什么反应？",a:"SN2 取代反应"},
+{s:"有机",q:"如何区分：用 NaOEt 和用 t-BuOK 作碱，消除产物有什么不同？",a:"NaOEt：体积小，Zaitsev 产物为主（多取代烯烃）\nt-BuOK：体积大（位阻碱），Hofmann 产物为主（少取代烯烃）"},
+{s:"有机",q:"卤代烃 + NaOH（水溶液）→ ？",a:"醇（水解/SN 取代）\nRX + NaOH → ROH + NaX"},
+{s:"有机",q:"卤代烃 + NaOR（醇钠）→ ？",a:"醚（Williamson 合成）\nRX + NaOR' → ROR' + NaX\n底物需要是1°或甲基（SN2），否则发生消除"},
+{s:"有机",q:"卤代烃 + NaCN → ？",a:"腈（R-CN），碳链增长一个碳\nCN⁻ 是好的亲核试剂，适合 SN2"},
+{s:"有机",q:"卤代烃 + NaNH₂ → ？",a:"主要发生 E2 消除（NH₂⁻ 是强碱）\n若底物是甲基/1°卤代烃也可能 SN2 得胺"},
+{s:"有机",q:"卤代烃 + Mg/乙醚 → ？",a:"Grignard 试剂 RMgX\n条件：无水乙醚，无活泼氢"},
+{s:"有机",q:"Grignard 试剂 + 甲醛 → 水解后得到？",a:"伯醇（RCH₂OH），碳链增加一个碳"},
+{s:"有机",q:"Grignard 试剂 + 醛（非甲醛）→ 水解后得到？",a:"仲醇（R-CH(OH)-R'），碳链增加"},
+{s:"有机",q:"Grignard 试剂 + 酮 → 水解后得到？",a:"叔醇（R₃COH）"},
+{s:"有机",q:"Grignard 试剂 + CO₂ → 水解后得到？",a:"羧酸（RCOOH），碳链增加一个碳"},
+{s:"有机",q:"Grignard 试剂 + 环氧乙烷 → 水解后得到？",a:"伯醇（RCH₂CH₂OH），碳链增加两个碳"},
+{s:"有机",q:"Grignard 试剂遇到哪些官能团会被破坏？",a:"活泼氢（-OH, -NH, -SH, -COOH, 末端炔 C≡CH）和水\n会发生质子化：RMgX + H-A → RH + MgXA"},
+{s:"有机",q:"Lindlar 催化剂将炔还原为什么产物？立体化学？",a:"顺式烯烃（cis-alkene）\nLindlar = Pd/CaCO₃/Pb(OAc)₂ + 喹啉（中毒催化剂），syn 加氢"},
+{s:"有机",q:"Na/NH₃(液) 将炔还原为什么产物？立体化学？",a:"反式烯烃（trans-alkene）\n经自由基阴离子中间体，反式加氢"},
+{s:"有机",q:"烯烃 + KMnO₄（冷、稀、碱性）→ ？",a:"邻二醇（顺式加成），syn-dihydroxylation\n碳碳双键不断裂"},
+{s:"有机",q:"烯烃 + KMnO₄（热/浓/酸性）或臭氧化(O₃/Zn)→ ？",a:"KMnO₄ 热酸性：氧化断裂，R₂C= → R₂C=O（酮）或 RCOOH\nO₃ + Zn(还原性水解)：醛/酮（更温和，保留醛基）"},
+{s:"有机",q:"苯环上邻对位定位基有哪些？（列举5个）",a:"−OH, −OR, −NH₂, −NHR, −NR₂（强活化）\n−CH₃, −R（烷基，弱活化）\n−F, −Cl, −Br, −I（卤素，钝化但仍邻对位定位）\n共同特点：使苯环电子密度增大或有孤对电子共轭"},
+{s:"有机",q:"苯环上间位定位基有哪些？（列举5个）",a:"−NO₂, −CN, −COOH, −COOR, −COR, −SO₃H, −CF₃, −NR₃⁺\n共同特点：吸电子基团，使苯环去活化"},
+{s:"有机",q:"苯的 Friedel-Crafts 烷基化反应的条件和局限？",a:"条件：RX + AlCl₃（Lewis 酸催化）\n局限：① 产物比原料更活泼，易多烷基化\n② 强去活化苯环（如 -NO₂）不反应\n③ 碳正离子可能重排"},
+{s:"有机",q:"苯的 Friedel-Crafts 酰基化的优势？",a:"条件：RCOCl + AlCl₃\n优势：① 不会多酰基化（酰基是间位钝化基）\n② 不发生碳正离子重排\n③ 可用 Clemmensen 还原(Zn-Hg/HCl)转化为烷基"},
+{s:"有机",q:"如何在苯上引入 -CH₂CH₂CH₃（正丙基）而避免重排？",a:"不能直接 Friedel-Crafts 烷基化（1°碳正离子会重排为2°）\n正确路线：先酰基化（CH₃CH₂COCl/AlCl₃）→ Clemmensen 还原"},
+{s:"有机",q:"醇的脱水（消除）规律？",a:"3° 醇最易脱水（稀 H₂SO₄, 低温）\n2° 醇中等（浓 H₂SO₄, 中温）\n1° 醇最难脱水（浓 H₂SO₄, 高温 ~170°C）\n产物遵循 Zaitsev 规则"},
+{s:"有机",q:"Lucas 试验区分1°/2°/3° 醇的现象？",a:"试剂：无水 ZnCl₂ + 浓 HCl\n3° 醇：立即变浑浊（SN1 快）\n2° 醇：5~10 min 变浑浊\n1° 醇：加热也不反应（室温）"},
+{s:"有机",q:"PCC (吡啶氯铬酸) 氧化醇到什么程度？",a:"1° 醇 → 醛（停在醛，不过度氧化）\n2° 醇 → 酮\nPCC 是温和氧化剂，在 CH₂Cl₂ 中使用"},
+{s:"有机",q:"Jones 试剂 (CrO₃/H₂SO₄/丙酮) 氧化醇到什么程度？",a:"1° 醇 → 羧酸（过度氧化）\n2° 醇 → 酮\n3° 醇 → 不反应"},
+{s:"有机",q:"醛与 Tollens 试剂（银镜反应）的现象和方程？",a:"RCHO + 2Ag(NH₃)₂⁺ + 2OH⁻ → RCOO⁻ + 2Ag↓ + 4NH₃ + H₂O\n现象：试管壁附着银镜\n酮不反应 → 可用于区分醛与酮"},
+{s:"有机",q:"醛酮与 HCN 加成的产物？意义？",a:"产物：氰醇（cyanohydrin），R₂C(OH)(CN)\n意义：碳链增长一个碳，CN 可水解为 COOH 或还原为 CH₂NH₂"},
+{s:"有机",q:"Wittig 反应的底物和产物？",a:"底物：醛或酮 + 磷叶立德 (Ph₃P=CR₂)\n产物：烯烃 + Ph₃P=O\n特点：C=O 精确转化为 C=C，双键位置确定"},
+{s:"有机",q:"羟醛缩合（Aldol 反应）的条件和产物？",a:"条件：有 α-H 的醛 + 稀 NaOH\n产物：β-羟基醛（Aldol 产物）\n加热脱水 → α,β-不饱和醛"},
+{s:"有机",q:"酯的水解（皂化）条件和产物？",a:"条件：NaOH/H₂O，加热\nRCOOR' + NaOH → RCOONa + R'OH\n酸性水解可逆，碱性水解（皂化）不可逆"},
+{s:"有机",q:"羧酸衍生物的活性顺序（亲核取代）？",a:"酰氯 > 酸酐 > 酯 > 酰胺\n（离去基团稳定性：Cl⁻ > RCOO⁻ > RO⁻ > NH₂⁻）"},
+{s:"有机",q:"Beckmann 重排的底物和产物？",a:"底物：肟（R₂C=NOH）\n条件：酸催化（H₂SO₄ 或 PCl₅）\n产物：酰胺（anti 位的基团迁移到 N 上）\n工业应用：环己酮肟 → 己内酰胺 → 尼龙6"},
+{s:"有机",q:"如何将苯甲酸转化为苯胺？（两步）",a:"① 苯甲酸 → 酰氯 → 酰胺（PhCONH₂）\n② Hofmann 重排（NaOBr）→ PhNH₂\n或者：苯 → 硝基苯(HNO₃/H₂SO₄) → 苯胺(Fe/HCl 或 H₂/Pd)"},
+{s:"有机",q:"重氮盐 (ArN₂⁺) 可以转化为哪些产物？",a:"① ArN₂⁺ + H₃PO₂ → ArH（脱氨基）\n② ArN₂⁺ + CuCl → ArCl (Sandmeyer)\n③ ArN₂⁺ + CuBr → ArBr\n④ ArN₂⁺ + CuCN → ArCN\n⑤ ArN₂⁺ + KI → ArI\n⑥ ArN₂⁺ + H₂O (加热) → ArOH\n⑦ ArN₂⁺ + HBF₄ → ArF (Balz-Schiemann)"},
+{s:"有机",q:"环氧化合物在酸性 vs 碱性条件下开环的区别？",a:"酸性（H⁺/H₂O）：亲核试剂进攻取代基多的碳（类 SN1，Markovnikov 方向）\n碱性（Nu⁻）：亲核试剂进攻取代基少的碳（SN2，反 Markovnikov 方向）\n两种情况都是反式开环（anti 加成）"},
+{s:"有机",q:"烯烃 + mCPBA 得到什么产物？",a:"环氧化合物（epoxide）\nmCPBA = 间氯过氧苯甲酸，syn 加成\n立体化学保持（cis-烯→cis-环氧，trans-烯→trans-环氧）"},
+{s:"有机",q:"NBS 的作用是什么？反应条件？",a:"NBS (N-溴代丁二酰亚胺) 用于烯丙位/苄位溴代\n条件：CCl₄，光照或 AIBN 引发\n产物：烯丙基溴 / 苄基溴（自由基机理）"},
+{s:"有机",q:"炔钠 (RC≡CNa) + 1°卤代烃 → ？意义？",a:"产物：内炔（RC≡CR'）\n意义：碳链增长的重要方法（SN2 反应）\n注意：只适用于1°卤代烃，2°/3°会发生消除"},
+{s:"有机",q:"烯烃的溴化（Br₂/CCl₄）的立体化学？",a:"反式加成（anti addition）\n经溴鎓离子中间体（三元环），Br⁻ 从对面进攻\n产物：反式-1,2-二溴代物"},
+{s:"有机",q:"醇 + SOCl₂（亚硫酰氯）→ ？优势？",a:"产物：氯代烃 + SO₂↑ + HCl↑\n优势：副产物全是气体，产物纯净，构型翻转（SN2，经氯代亚硫酸酯中间体）"},
+{s:"有机",q:"Michael 加成反应的底物和条件？",a:"底物：α,β-不饱和羰基化合物（Michael 受体）+ 有活泼 α-H 的化合物（Michael 供体）\n条件：碱催化\n产物：1,4-加成产物"},
+{s:"概统",q:"二项分布 B(n,p) 的期望和方差？",a:"E(X) = np\nD(X) = np(1−p)"},
+{s:"概统",q:"泊松分布 P(λ) 的期望和方差？",a:"E(X) = λ\nD(X) = λ\n（期望和方差都等于参数 λ）"},
+{s:"概统",q:"均匀分布 U(a,b) 的期望和方差？",a:"E(X) = (a+b)/2\nD(X) = (b−a)²/12"},
+{s:"概统",q:"指数分布 Exp(λ) 的期望和方差？密度函数？",a:"f(x) = λe^(−λx), x ≥ 0\nE(X) = 1/λ\nD(X) = 1/λ²\n无记忆性：P(X > s+t | X > s) = P(X > t)"},
+{s:"概统",q:"正态分布 N(μ, σ²) 的期望和方差？",a:"E(X) = μ\nD(X) = σ²\n标准化：Z = (X−μ)/σ ~ N(0,1)"},
+{s:"概统",q:"几何分布 Geom(p) 的期望和方差？（首次成功时的试验次数）",a:"E(X) = 1/p\nD(X) = (1−p)/p²"},
+{s:"概统",q:"超几何分布的期望？",a:"E(X) = nM/N\n（N 总数，M 目标总数，n 抽取数）"},
+{s:"概统",q:"贝叶斯公式？",a:"P(Bⱼ|A) = P(A|Bⱼ)P(Bⱼ) / Σᵢ P(A|Bᵢ)P(Bᵢ)\n其中 {Bᵢ} 为样本空间的一个划分\n分母即全概率公式 P(A)"},
+{s:"概统",q:"全概率公式？",a:"P(A) = Σᵢ P(A|Bᵢ)P(Bᵢ)\n其中 {B₁, B₂, ..., Bₙ} 为完备事件组（互斥且并为全集）"},
+{s:"概统",q:"协方差 Cov(X,Y) 的定义和计算公式？",a:"定义：Cov(X,Y) = E[(X−EX)(Y−EY)]\n计算公式：Cov(X,Y) = E(XY) − E(X)E(Y)"},
+{s:"概统",q:"相关系数 ρ 的定义？取值范围？",a:"ρ(X,Y) = Cov(X,Y) / (√D(X) · √D(Y))\n取值：−1 ≤ ρ ≤ 1\n|ρ|=1 ⟺ X 与 Y 线性相关\nρ=0 称不相关（≠ 独立，除非正态）"},
+{s:"概统",q:"D(X±Y) = ？",a:"D(X±Y) = D(X) + D(Y) ± 2Cov(X,Y)\n若 X,Y 独立，则 D(X±Y) = D(X) + D(Y)"},
+{s:"概统",q:"独立 vs 不相关的关系？",a:"独立 ⇒ 不相关（ρ=0）\n不相关 ⇏ 独立（一般情况）\n例外：二维正态分布中，不相关 ⟺ 独立"},
+{s:"概统",q:"中心极限定理（Lindeberg-Levy）的内容？",a:"X₁, X₂, ..., Xₙ iid，E(Xᵢ)=μ, D(Xᵢ)=σ²\n当 n 充分大时：\nX̄ ≈ N(μ, σ²/n)\n即 (X̄−μ)/(σ/√n) → N(0,1)\n实用条件：n ≥ 30"},
+{s:"概统",q:"棣莫弗-拉普拉斯定理（二项分布的中心极限定理）？",a:"X ~ B(n,p)，n 充分大时：\n(X−np)/√(np(1−p)) ≈ N(0,1)\n即 B(n,p) ≈ N(np, np(1−p))"},
+{s:"概统",q:"最大似然估计（MLE）的步骤？",a:"① 写出似然函数 L(θ) = ∏f(xᵢ; θ)\n② 取对数 ln L(θ)\n③ 对 θ 求导令 d(lnL)/dθ = 0\n④ 解方程得 θ̂_MLE\n（多参数则对每个参数分别求偏导）"},
+{s:"概统",q:"MLE 的不变性原则是什么？",a:"若 θ̂ 是 θ 的 MLE，则 g(θ̂) 是 g(θ) 的 MLE\n例如：σ̂² 是 σ² 的 MLE，则 σ̂ = √(σ̂²) 是 σ 的 MLE"},
+{s:"概统",q:"矩估计法的思路？",a:"用样本矩替代总体矩：\nÂ₁ = X̄（一阶样本矩 = 总体均值）\nÂ₂ = (1/n)Σxᵢ² = E(X²)\n解方程组得参数估计值"},
+{s:"概统",q:"无偏估计量的定义？样本方差 S² 为什么除以 n−1？",a:"无偏：E(θ̂) = θ\nS² = Σ(Xᵢ−X̄)²/(n−1)，除以 n−1 是因为用了 X̄ 损失一个自由度\n若除以 n 则 E = (n−1)σ²/n ≠ σ²，有偏"},
+{s:"概统",q:"正态总体下，μ 的置信区间（σ 已知）？",a:"X̄ ± z_{α/2} · σ/√n\n其中 z_{α/2} 为标准正态分位数\n95% 置信：z_{0.025} = 1.96"},
+{s:"概统",q:"正态总体下，μ 的置信区间（σ 未知）？",a:"X̄ ± t_{α/2}(n−1) · S/√n\n使用 t 分布，自由度 n−1\nS 为样本标准差"},
+{s:"概统",q:"正态总体下，σ² 的置信区间？",a:"((n−1)S²/χ²_{α/2}(n−1), (n−1)S²/χ²_{1−α/2}(n−1))\n使用 χ² 分布，自由度 n−1"},
+{s:"概统",q:"χ² 分布的期望和方差？（自由度 n）",a:"E(χ²) = n\nD(χ²) = 2n"},
+{s:"概统",q:"t 分布的期望和方差？（自由度 n）",a:"E(T) = 0（n > 1 时）\nD(T) = n/(n−2)（n > 2 时）"},
+{s:"概统",q:"F 分布 F(n₁, n₂) 的性质？",a:"若 F ~ F(n₁,n₂)，则 1/F ~ F(n₂,n₁)\nF_{α}(n₁,n₂) = 1/F_{1−α}(n₂,n₁)"},
+{s:"概统",q:"条件概率公式？",a:"P(A|B) = P(AB)/P(B)，其中 P(B) > 0"},
+{s:"概统",q:"事件独立性的定义？",a:"A, B 独立 ⟺ P(AB) = P(A)P(B)\n等价于：P(A|B) = P(A)"},
+{s:"概统",q:"E(XY) 在 X, Y 独立时等于？",a:"E(XY) = E(X)·E(Y)\n（独立 ⇒ 不相关 ⇒ Cov=0 ⇒ E(XY)=EX·EY）"},
+{s:"概统",q:"切比雪夫不等式？",a:"P(|X−μ| ≥ ε) ≤ σ²/ε²\n或等价地：P(|X−μ| < ε) ≥ 1 − σ²/ε²"},
+{s:"概统",q:"大数定律（辛钦）的内容？",a:"X₁, ..., Xₙ iid，E(Xᵢ)=μ\nX̄ →ᵖ μ（依概率收敛）\n即 ∀ε>0，lim P(|X̄−μ| ≥ ε) = 0"},
+{s:"概统",q:"泊松分布作为二项分布近似的条件？",a:"n 很大，p 很小，λ = np 适中\n此时 B(n,p) ≈ P(λ)\n实用条件：n ≥ 20, p ≤ 0.05"},
+{s:"概统",q:"连续型随机变量 CDF 和 PDF 的关系？",a:"F(x) = ∫_{−∞}^{x} f(t)dt\nf(x) = F'(x)\nP(a < X ≤ b) = F(b) − F(a) = ∫_a^b f(x)dx"},
+{s:"概统",q:"二维正态分布 (X,Y) 的五个参数？",a:"μ₁, μ₂（两个均值）\nσ₁², σ₂²（两个方差）\nρ（相关系数）\n记作 N(μ₁, μ₂, σ₁², σ₂², ρ)"},
+{s:"概统",q:"假设检验中，第一类错误和第二类错误？",a:"第一类错误（α 错误）：H₀ 为真却拒绝 H₀（弃真）\n第二类错误（β 错误）：H₀ 为假却接受 H₀（取伪）\n显著性水平 α 控制第一类错误概率"},
+{s:"概统",q:"方差的计算公式（两种）？",a:"D(X) = E(X²) − [E(X)]²\nD(X) = E[(X−EX)²]\n常用第一种计算"},
+{s:"大物",q:"细杆绕端点转动的转动惯量？（质量M，长度L）",a:"I = ML²/3"},
+{s:"大物",q:"细杆绕中心转动的转动惯量？",a:"I = ML²/12"},
+{s:"大物",q:"实心圆盘（圆柱）绕中心轴的转动惯量？",a:"I = MR²/2"},
+{s:"大物",q:"实心球绕直径的转动惯量？",a:"I = 2MR²/5"},
+{s:"大物",q:"薄壁圆环（圆筒）绕中心轴的转动惯量？",a:"I = MR²"},
+{s:"大物",q:"平行轴定理？",a:"I = I_c + Md²\nI_c 为绕质心轴的转动惯量，d 为两轴间距"},
+{s:"大物",q:"洛伦兹变换（x 和 t）？",a:"x' = γ(x − vt)\nt' = γ(t − vx/c²)\n其中 γ = 1/√(1−v²/c²)"},
+{s:"大物",q:"相对论质量-能量关系？",a:"E = mc² = γm₀c²（总能量）\nE₀ = m₀c²（静能）\nE_k = (γ−1)m₀c²（动能）"},
+{s:"大物",q:"相对论动量？",a:"p = γm₀v\n其中 γ = 1/√(1−v²/c²)"},
+{s:"大物",q:"相对论能量-动量关系？",a:"E² = (pc)² + (m₀c²)²\n或 E² = p²c² + E₀²"},
+{s:"大物",q:"相对论速度变换公式？（S'系相对S系沿x方向速度v运动）",a:"u_x = (u_x' + v) / (1 + u_x'v/c²)\nu_y = u_y' / [γ(1 + u_x'v/c²)]"},
+{s:"大物",q:"尺缩效应公式？",a:"L = L₀/γ = L₀√(1−v²/c²)\n运动方向上的长度收缩，L < L₀"},
+{s:"大物",q:"钟慢效应公式？",a:"Δt = γΔt₀ = Δt₀/√(1−v²/c²)\n运动时钟变慢，Δt > Δt₀"},
+{s:"大物",q:"简谐振动方程的一般形式？",a:"x = A cos(ωt + φ₀)\nv = −Aω sin(ωt + φ₀)\na = −Aω² cos(ωt + φ₀) = −ω²x"},
+{s:"大物",q:"弹簧振子的角频率和周期？",a:"ω = √(k/m)\nT = 2π√(m/k)"},
+{s:"大物",q:"单摆的周期公式？（小角度近似）",a:"T = 2π√(L/g)\n条件：摆角 θ < 5°"},
+{s:"大物",q:"简谐振动的能量？",a:"E = ½kA²（总能量恒定）\nE_k = ½mv² = ½kA²sin²(ωt+φ₀)\nE_p = ½kx² = ½kA²cos²(ωt+φ₀)"},
+{s:"大物",q:"多普勒效应公式（机械波）？",a:"f' = f · (v ± v_观) / (v ∓ v_源)\n规则：接近取上号（分子+，分母−），远离取下号\nv 为波速"},
+{s:"大物",q:"光的多普勒效应？（光源远离观察者）",a:"f' = f · √(1−β) / √(1+β)\nβ = v/c（光源远离时红移）"},
+{s:"大物",q:"热力学等温过程（理想气体）的 W, Q, ΔU？",a:"ΔU = 0（温度不变）\nW = nRT ln(V₂/V₁) = nRT ln(p₁/p₂)\nQ = W（吸热全做功）"},
+{s:"大物",q:"热力学等压过程的 W, Q, ΔU？",a:"W = p(V₂−V₁) = nRΔT\nΔU = nCᵥΔT\nQ = nCₚΔT = ΔU + W"},
+{s:"大物",q:"热力学等容过程的 W, Q, ΔU？",a:"W = 0（体积不变）\nΔU = nCᵥΔT\nQ = ΔU = nCᵥΔT"},
+{s:"大物",q:"热力学绝热过程的 W, Q, ΔU？",a:"Q = 0\nΔU = −W = nCᵥΔT\n绝热方程：pVᵞ = 常数，TVᵞ⁻¹ = 常数\nγ = Cₚ/Cᵥ"},
+{s:"大物",q:"理想气体 Cᵥ 和 Cₚ 的关系？各自由度下的值？",a:"Cₚ − Cᵥ = R（迈耶公式）\n单原子：Cᵥ = 3R/2, Cₚ = 5R/2, γ = 5/3\n双原子：Cᵥ = 5R/2, Cₚ = 7R/2, γ = 7/5"},
+{s:"大物",q:"麦克斯韦速率分布三个特征速率？",a:"最概然速率：v_p = √(2RT/M) = √(2kT/m)\n平均速率：v̄ = √(8RT/(πM)) = √(8kT/(πm))\n方均根速率：v_rms = √(3RT/M) = √(3kT/m)\n大小关系：v_p < v̄ < v_rms"},
+{s:"大物",q:"卡诺循环效率？",a:"η = 1 − T₂/T₁\nT₁ 为高温热源温度，T₂ 为低温热源温度（绝对温度）\n卡诺效率是同温度区间所有热机的最大效率"},
+{s:"大物",q:"熵变公式（可逆过程）？",a:"dS = δQ_可逆/T\nΔS = ∫ δQ_可逆/T\n理想气体：ΔS = nCᵥ ln(T₂/T₁) + nR ln(V₂/V₁)"},
+{s:"大物",q:"克劳修斯不等式？",a:"∮ δQ/T ≤ 0\n等号对应可逆过程，小于号对应不可逆过程"},
+{s:"大物",q:"角动量定理和角动量守恒？",a:"M = dL/dt（合外力矩 = 角动量变化率）\n当 M_外 = 0 时，L = Iω = 常量\n应用：花滑收手加速旋转"},
+{s:"大物",q:"转动动能公式？",a:"E_k = ½Iω²\n类比平动：E_k = ½mv²"},
+{s:"大物",q:"波的干涉：两列波叠加后振幅最大/最小的条件？",a:"加强：Δφ = 2kπ（k=0,±1,±2,...），即路程差 δ = kλ\n减弱：Δφ = (2k+1)π，即路程差 δ = (k+½)λ"},
+{s:"大物",q:"薄膜干涉（等厚干涉）的光程差？",a:"δ = 2nt + λ/2（有半波损失时）\nδ = 2nt（无半波损失时）\n半波损失：光从光疏→光密介质反射时附加 λ/2"},
+{s:"大物",q:"单缝衍射暗纹条件？",a:"a sinθ = kλ（k = ±1, ±2, ...）\na 为缝宽\n注意：中央明纹宽度 = 2λ/a，是其他明纹的两倍"},
+{s:"大物",q:"光栅方程（主极大条件）？",a:"d sinθ = kλ（k = 0, ±1, ±2, ...）\nd = a + b 为光栅常数（缝宽+缝距）"},
+{s:"大物",q:"理想气体状态方程和微观形式？",a:"宏观：pV = nRT\n微观：p = (2/3)n̄ · ½mv̄² = n̄kT\n其中 n̄ 为分子数密度，k = R/Nₐ = 1.38×10⁻²³ J/K"},
+{s:"普生",q:"多孔动物门（海绵动物）的主要特征？",a:"① 无真正的组织和器官分化，无神经系统\n② 水沟系统（领细胞过滤取食）\n③ 细胞内消化\n④ 骨针或海绵丝支持\n⑤ 不对称或辐射对称"},
+{s:"普生",q:"刺胞动物门（腔肠动物）的主要特征？",a:"① 辐射对称\n② 两胚层（外胚层+内胚层+中胶层）\n③ 具刺胞（刺丝囊），防御和捕食\n④ 有口无肛门（消化循环腔）\n⑤ 散漫神经网\n代表：水螅、水母、珊瑚"},
+{s:"普生",q:"扁形动物门的主要特征？",a:"① 两侧对称（进化意义重大：定向运动）\n② 三胚层，无体腔（实质填充）\n③ 有口无肛门\n④ 梯形神经系统\n⑤ 焰细胞排泄系统（原肾管）\n代表：涡虫、血吸虫、绦虫"},
+{s:"普生",q:"线虫动物门的主要特征？",a:"① 假体腔（体壁中胚层，消化道内胚层，之间无中胚层衬里）\n② 完全消化管（有口有肛门，首次出现）\n③ 体表角质层\n④ 雌雄异体\n代表：蛔虫、蛲虫、线虫"},
+{s:"普生",q:"环节动物门的主要特征？",a:"① 真体腔（裂体腔）\n② 同律分节（身体重复体节）\n③ 闭管式循环系统\n④ 后肾管排泄\n⑤ 链状神经系统（腹神经索）\n代表：蚯蚓、沙蚕、水蛭"},
+{s:"普生",q:"软体动物门的主要特征？",a:"① 身体分头、足、内脏团三部分\n② 外套膜分泌贝壳\n③ 开管式循环（头足类为闭管式）\n④ 真体腔退化\n⑤ 多数有齿舌（取食器官）\n代表：蜗牛、蛤蜊、章鱼、鱿鱼"},
+{s:"普生",q:"节肢动物门的主要特征？",a:"① 体表几丁质外骨骼（需蜕皮生长）\n② 异律分节，附肢分节\n③ 开管式循环（血淋巴）\n④ 马氏管排泄（昆虫）/ 绿腺（甲壳类）\n⑤ 最大的动物门，种类最多\n代表：昆虫、蜘蛛、虾蟹"},
+{s:"普生",q:"棘皮动物门的主要特征？为什么在进化上重要？",a:"① 五辐射对称（次生性）\n② 后口动物（与脊索动物同属后口）\n③ 水管系统（运动、呼吸、捕食）\n④ 体腔发达，内骨骼\n⑤ 全部海生\n代表：海星、海胆、海参\n进化意义：后口动物，与脊索动物有共同祖先"},
+{s:"普生",q:"脊索动物门的三大特征？",a:"① 脊索（至少胚胎期有）\n② 背神经管（中空）\n③ 咽鳃裂（至少胚胎期有）\n亚门：尾索（海鞘）、头索（文昌鱼）、脊椎动物"},
+{s:"普生",q:"藻类植物的主要类群及特点？",a:"绿藻：叶绿素a+b，淀粉储存，陆地植物祖先\n褐藻：叶绿素a+c，褐藻胶，多细胞大型（海带）\n红藻：叶绿素a+藻红素，深水，琼脂来源（紫菜）\n特点：无根茎叶分化，有性/无性生殖"},
+{s:"普生",q:"苔藓植物的主要特征？（与蕨类对比）",a:"① 有茎叶分化，无真正的根（假根）\n② 无维管组织 → 矮小，依赖潮湿环境\n③ 配子体为主（植物体 = 配子体）\n④ 孢子体依附配子体生活\n⑤ 受精需水（精子游动）"},
+{s:"普生",q:"蕨类植物的主要特征？",a:"① 有根茎叶的分化\n② 有维管组织（首次出现）→ 可以长得较高\n③ 孢子体为主（植物体 = 孢子体）\n④ 配子体（原叶体）独立但小\n⑤ 受精仍需水"},
+{s:"普生",q:"裸子植物 vs 被子植物的主要区别？（4点）",a:"裸子：胚珠裸露、无花无果、多为风媒、单受精\n被子：胚珠包于子房中、有花有果、虫媒/风媒、双受精\n被子植物进化优势：花吸引传粉者、果实保护种子并助传播、双受精提供三倍体胚乳"},
+{s:"普生",q:"被子植物双受精过程？",a:"花粉管释放两个精子：\n精子1 + 卵细胞 → 受精卵(2n) → 胚\n精子2 + 中央细胞(2个极核) → 初生胚乳核(3n) → 胚乳\n双受精是被子植物特有的"},
+{s:"普生",q:"细胞有氧呼吸四个阶段及产物？",a:"① 糖酵解（细胞质基质）：葡萄糖 → 2丙酮酸 + 2ATP + 2NADH\n② 丙酮酸氧化脱羧（线粒体基质）：丙酮酸 → 乙酰CoA + CO₂ + NADH\n③ 柠檬酸循环/TCA（线粒体基质）：乙酰CoA → 2CO₂ + 3NADH + FADH₂ + GTP\n④ 氧化磷酸化/电子传递链（线粒体内膜）：NADH/FADH₂ → H₂O + 大量ATP\n总计：1葡萄糖 → 约30-32 ATP"},
+{s:"普生",q:"糖酵解的关键调控酶？",a:"磷酸果糖激酶-1（PFK-1）：最关键的限速酶\n被 ATP、柠檬酸抑制；被 AMP、果糖-2,6-二磷酸激活\n己糖激酶和丙酮酸激酶也是调控点"},
+{s:"普生",q:"无氧呼吸（发酵）的两种类型？",a:"乙醇发酵：丙酮酸 → 乙醇 + CO₂（酵母菌）\n乳酸发酵：丙酮酸 → 乳酸（动物肌肉、乳酸菌）\n目的：再生 NAD⁺ 使糖酵解继续\n净产 ATP：仅2个/葡萄糖"},
+{s:"普生",q:"光合作用光反应阶段发生在哪里？产物？",a:"场所：叶绿体类囊体薄膜\n过程：水的光解 + 电子传递 + 光合磷酸化\n产物：O₂（来自水的光解）、ATP、NADPH\n原料：H₂O、ADP、NADP⁺、光能"},
+{s:"普生",q:"光合作用暗反应（Calvin 循环）发生在哪里？三个阶段？",a:"场所：叶绿体基质\n① 固碳：CO₂ + RuBP(C5) → 2个 C3（3-磷酸甘油酸）\n   酶：RuBisCO\n② 还原：C3 + ATP + NADPH → G3P(C3)\n③ 再生：5个 G3P → 3个 RuBP\n净产物：每固定3个CO₂ → 1个G3P → 合成糖"},
+{s:"普生",q:"C3 植物 vs C4 植物的区别？",a:"C3：CO₂直接被 RuBisCO 固定为 C3，光呼吸明显，低温湿润环境（水稻、小麦）\nC4：CO₂先被 PEP 羧化酶固定为 C4（草酰乙酸），再释放给 Calvin 循环，CO₂浓缩机制，高温干旱高效（玉米、甘蔗）"},
+{s:"普生",q:"线粒体的结构和功能？",a:"双膜结构：外膜光滑，内膜折叠成嵴\n内膜：电子传递链、ATP 合酶（氧化磷酸化）\n基质：TCA 循环酶、自身 DNA 和核糖体\n功能：有氧呼吸的主要场所，\"细胞的动力工厂\""},
+{s:"普生",q:"内质网的两种类型及功能？",a:"粗面内质网（RER）：附着核糖体，合成分泌蛋白和膜蛋白\n光面内质网（SER）：脂质合成、Ca²⁺ 储存、解毒（肝细胞）、糖原分解"},
+{s:"普生",q:"高尔基体的功能？",a:"① 蛋白质的修饰加工（糖基化、磷酸化）\n② 蛋白质的分选和运输\n③ 分泌囊泡的形成\n④ 植物中参与细胞壁形成（分泌果胶等）\n方向：顺面（cis，接收ER来的囊泡）→ 反面（trans，分泌）"},
+{s:"普生",q:"溶酶体的功能和特点？",a:"含多种酸性水解酶（最适 pH ≈ 5）\n功能：细胞内消化（吞噬物、衰老细胞器的自噬）\n膜上有质子泵维持低 pH\n来源：高尔基体出芽"},
+{s:"普生",q:"有丝分裂各期的主要事件？",a:"前期：染色质凝缩→染色体，核仁消失，纺锤体形成\n中期：染色体排列在赤道板，着丝点连接纺锤丝\n后期：着丝点分裂，姐妹染色单体分向两极\n末期：染色体解旋，核膜核仁重现，胞质分裂"},
+{s:"普生",q:"减数分裂 I 和 II 各有什么特点？",a:"减I：同源染色体配对（联会）→ 交叉互换 → 同源染色体分离（减半）\n减II：类似有丝分裂，姐妹染色单体分离\n结果：1个细胞 → 4个单倍体细胞\n关键事件在减I：遗传多样性来源（交叉互换 + 自由组合）"},
+{s:"普生",q:"有丝分裂 vs 减数分裂的关键区别？（3点）",a:"① 有丝分裂1次分裂→2个2n细胞；减数分裂2次分裂→4个n细胞\n② 有丝分裂无联会和交叉互换；减数分裂I有\n③ 有丝分裂子细胞与母细胞基因相同；减数分裂产生遗传多样性\n有丝分裂用于生长修复；减数分裂产生配子"},
+{s:"普生",q:"细胞周期的各阶段及时间占比？",a:"间期（占90%+）：\n  G1期：细胞生长，准备DNA复制\n  S期：DNA复制\n  G2期：准备分裂，合成分裂相关蛋白\n分裂期（M期）：前期→中期→后期→末期\nG1/S 检验点是最关键的调控点（限制点）"},
+{s:"普生",q:"叶绿体的结构？",a:"双膜结构 + 类囊体系统\n外膜、内膜、基质（含 Calvin 循环酶 + 自身 DNA）\n类囊体：由膜围成的扁平囊，堆叠成基粒（grana）\n类囊体膜上：光系统 I/II、电子传递链、ATP 合酶"},
+{s:"普生",q:"过氧化物酶体的功能？",a:"含氧化酶和过氧化氢酶\n功能：① 脂肪酸 β-氧化（超长链）\n② H₂O₂ 分解（2H₂O₂ → 2H₂O + O₂）\n③ 植物中参与光呼吸\n④ 解毒（肝、肾细胞中丰富）"},
+{s:"习思想",q:"\"十个明确\"的第一条是什么？",a:"明确中国特色社会主义最本质的特征是中国共产党领导，中国特色社会主义制度的最大优势是中国共产党领导，中国共产党是最高政治领导力量"},
+{s:"习思想",q:"\"十个明确\"中关于主要矛盾的表述？",a:"明确新时代我国社会主要矛盾是人民日益增长的美好生活需要和不平衡不充分的发展之间的矛盾"},
+{s:"习思想",q:"\"十个明确\"中关于总目标的表述？（两个总目标）",a:"① 全面深化改革总目标：完善和发展中国特色社会主义制度、推进国家治理体系和治理能力现代化\n② 全面推进依法治国总目标：建设中国特色社会主义法治体系、建设社会主义法治国家"},
+{s:"习思想",q:"\"十个明确\"中关于强军目标的表述？",a:"明确党在新时代的强军目标是建设一支听党指挥、能打胜仗、作风优良的人民军队，把人民军队建设成为世界一流军队"},
+{s:"习思想",q:"\"十个明确\"中关于外交的表述？",a:"明确中国特色大国外交要推动构建新型国际关系，推动构建人类命运共同体"},
+{s:"习思想",q:"\"五位一体\"总体布局包括哪五个方面？",a:"经济建设、政治建设、文化建设、社会建设、生态文明建设\n（经政文社生）"},
+{s:"习思想",q:"\"四个全面\"战略布局（二十大后最新表述）？",a:"① 全面建设社会主义现代化国家\n② 全面深化改革\n③ 全面依法治国\n④ 全面从严治党\n注意：十九大前第一条是\"全面建成小康社会\"，二十大后更新为\"全面建设社会主义现代化国家\""},
+{s:"习思想",q:"\"四个自信\"是哪四个？",a:"① 中国特色社会主义道路自信\n② 理论自信\n③ 制度自信\n④ 文化自信\n其中文化自信是更基础、更广泛、更深厚的自信"},
+{s:"习思想",q:"新发展理念包括哪五个？",a:"创新、协调、绿色、开放、共享\n创新是第一动力\n协调是内生特点\n绿色是普遍形态\n开放是必由之路\n共享是根本目的"},
+{s:"习思想",q:"新时代我国社会主要矛盾是什么？（完整表述）",a:"人民日益增长的美好生活需要和不平衡不充分的发展之间的矛盾\n（十九大提出，取代了\"人民日益增长的物质文化需要同落后的社会生产之间的矛盾\"）"},
+{s:"习思想",q:"\"两个一百年\"奋斗目标分别是什么？",a:"第一个百年（建党100年/2021年）：全面建成小康社会 已实现\n第二个百年（建国100年/2049年）：全面建成社会主义现代化强国"},
+{s:"习思想",q:"中国式现代化的五个特征？",a:"① 人口规模巨大的现代化\n② 全体人民共同富裕的现代化\n③ 物质文明和精神文明相协调的现代化\n④ 人与自然和谐共生的现代化\n⑤ 走和平发展道路的现代化"},
+{s:"习思想",q:"\"两个维护\"是什么？",a:"① 坚决维护习近平总书记党中央的核心、全党的核心地位\n② 坚决维护党中央权威和集中统一领导"},
+{s:"习思想",q:"\"两个确立\"是什么？",a:"① 确立习近平同志党中央的核心、全党的核心地位\n② 确立习近平新时代中国特色社会主义思想的指导地位"},
+{s:"习思想",q:"供给侧结构性改革的五大任务？",a:"去产能、去库存、去杠杆、降成本、补短板\n（三去一降一补）"},
+{s:"习思想",q:"社会主义核心价值观的三个层面（12个词）？",a:"国家层面：富强、民主、文明、和谐\n社会层面：自由、平等、公正、法治\n个人层面：爱国、敬业、诚信、友善"},
+{s:"习思想",q:"新发展格局是什么？",a:"加快构建以国内大循环为主体、国内国际双循环相互促进的新发展格局\n关键：扩大内需是战略基点，供给侧结构性改革是战略方向"},
+{s:"习思想",q:"\"四个意识\"是哪四个？",a:"政治意识、大局意识、核心意识、看齐意识"},
+{s:"习思想",q:"全过程人民民主的含义？",a:"是社会主义民主政治的本质属性\n包括：民主选举、民主协商、民主决策、民主管理、民主监督\n实现过程民主和成果民主、程序民主和实质民主、直接民主和间接民主、人民民主和国家意志的统一"},
+{s:"习思想",q:"构建人类命运共同体的核心内涵？（五个方面）",a:"① 持久和平（政治）\n② 普遍安全（安全）\n③ 共同繁荣（经济）\n④ 开放包容（文明）\n⑤ 清洁美丽（生态）"},
+{s:"分析化学",q:"有效数字修约规则\"四舍六入五成双\"的具体含义？",a:"当末位数字为5时：\n- 5后有非零数字 → 进位\n- 5后全为零 → 看5前一位：奇数则进位，偶数则舍去\n目的：消除系统误差的积累"},
+{s:"分析化学",q:"什么是系统误差？什么是随机误差？",a:"系统误差：由固定原因引起，具有单向性和重复性，可校正（如仪器未校准、试剂不纯）\n随机误差：由不确定因素引起，大小方向不固定，服从正态分布，不可消除但可减小"},
+{s:"分析化学",q:"标准偏差 s 的计算公式？",a:"s = √[Σ(xᵢ - x̄)² / (n-1)]\n其中 x̄ 为平均值，n 为测量次数\n分母用 n-1（自由度），称为 Bessel 校正"},
+{s:"分析化学",q:"相对标准偏差（RSD）/ 变异系数（CV）的公式？",a:"RSD = (s / x̄) × 100%\n也称变异系数 CV，用于比较不同量级数据的精密度"},
+{s:"分析化学",q:"置信区间的公式？",a:"μ = x̄ ± t·s/√n\n其中 t 为 t 分布临界值（查表），取决于置信度 P 和自由度 f = n-1\n含义：真值 μ 以概率 P 落在此区间内"},
+{s:"分析化学",q:"t 检验判断系统误差的方法？",a:"计算 t = |x̄ - μ| · √n / s\n若 t > t(α, n-1)（查表值），则存在显著系统误差\n若 t ≤ t(α, n-1)，则无显著系统误差"},
+{s:"分析化学",q:"F 检验的用途和方法？",a:"用途：比较两组数据的精密度是否有显著差异\nF = s₁²/s₂²（大方差/小方差，使 F ≥ 1）\n若 F > F(α, f₁, f₂)（查表），精密度有显著差异"},
+{s:"分析化学",q:"强酸溶液（浓度 c）的 pH 计算？",a:"当 c ≥ 10⁻⁶ mol/L：pH = -lg c\n当 c < 10⁻⁶ mol/L（极稀）：需考虑水的电离\npH = -lg[(c + √(c² + 4Kw))/2]"},
+{s:"分析化学",q:"强碱溶液（浓度 c）的 pH 计算？",a:"pOH = -lg c\npH = 14 - pOH = 14 + lg c\n（适用于 c ≥ 10⁻⁶ mol/L）"},
+{s:"分析化学",q:"一元弱酸 HA（浓度 c，解离常数 Ka）的 pH 计算？",a:"最简式（c/Ka > 400 且 c > 20Kw/Ka）：\npH = ½(pKa - lg c)\n即 [H⁺] = √(Ka·c)"},
+{s:"分析化学",q:"一元弱碱 B（浓度 c，解离常数 Kb）的 pH 计算？",a:"[OH⁻] = √(Kb·c)\npOH = ½(pKb - lg c)\npH = 14 - pOH"},
+{s:"分析化学",q:"两性物质（如 NaHA）的 pH 近似公式？",a:"pH ≈ ½(pKa1 + pKa2)\n条件：c 远大于 Ka1 和 Ka2\n与浓度无关（近似下）"},
+{s:"分析化学",q:"Henderson-Hasselbalch 方程？",a:"对于弱酸缓冲体系 HA/A⁻：\npH = pKa + lg([A⁻]/[HA]) = pKa + lg(c碱/c酸)\n对于弱碱缓冲体系 B/BH⁺：\npOH = pKb + lg([BH⁺]/[B]) = pKb + lg(c酸/c碱)"},
+{s:"分析化学",q:"缓冲容量最大的条件是什么？",a:"当 [A⁻]/[HA] = 1，即 pH = pKa 时缓冲容量最大\n有效缓冲范围：pH = pKa ± 1"},
+{s:"分析化学",q:"EDTA 滴定中条件稳定常数 K'MY 的定义？",a:"K'MY = KMY / (αY(H) · αM(L))\n其中：\nKMY = 绝对稳定常数\nαY(H) = EDTA 酸效应系数\nαM(L) = 金属离子副反应系数"},
+{s:"分析化学",q:"EDTA 酸效应系数 αY(H) 的含义？",a:"αY(H) = [Y']/[Y⁴⁻] = 1 + [H⁺]/Ka6 + [H⁺]²/(Ka5·Ka6) + ...\n表示未与金属配位的 EDTA 各种型体总浓度与 Y⁴⁻ 浓度之比\nlg αY(H) 越大，酸度越高，EDTA 有效浓度越低"},
+{s:"分析化学",q:"EDTA 滴定中，准确滴定的判据是什么？",a:"lg K'MY ≥ 6（即 lg KMY - lg αY(H) ≥ 6）\n此时化学计量点附近的突跃足够大（ΔpM ≥ 0.2），可用指示剂判断终点"},
+{s:"分析化学",q:"金属指示剂的变色原理？",a:"指示剂 In 与金属离子 M 形成有色配合物 MIn\n滴定前：溶液呈 MIn 的颜色\n化学计量点时：EDTA 夺取 MIn 中的 M，释放游离 In\n溶液由 MIn 颜色 → In 颜色（变色）"},
+{s:"分析化学",q:"Nernst 方程的形式？",a:"E = E⊖ - (RT/nF) ln Q = E⊖ - (0.0592/n) lg Q （25°C）\n其中 E⊖ = 标准电极电位，n = 转移电子数，Q = 反应商\n对半反应：E = E⊖ - (0.0592/n) lg([还原态]/[氧化态])"},
+{s:"分析化学",q:"氧化还原滴定中，化学计量点电位 Esp 的计算？",a:"对于 n₁Ox₂ + n₂Red₁ 反应：\nEsp = (n₁E₁⊖ + n₂E₂⊖) / (n₁ + n₂)\n即按电子转移数加权平均"},
+{s:"分析化学",q:"氧化还原滴定突跃范围的估算？",a:"突跃范围约为：\nE₂⊖ ± 3×0.0592/n₂ 到 E₁⊖ ± 3×0.0592/n₁\nΔE⊖ 越大（两电对电位差越大），突跃越明显"},
+{s:"分析化学",q:"Beer-Lambert 定律的表达式？",a:"A = εbc = -lg T\n其中：\nA = 吸光度\nε = 摩尔吸光系数（L·mol⁻¹·cm⁻¹）\nb = 光程（cm）\nc = 浓度（mol/L）\nT = 透射比 = I/I₀"},
+{s:"分析化学",q:"Beer-Lambert 定律适用条件和偏离原因？",a:"适用条件：单色光、稀溶液、均匀介质\n偏离原因：\n- 化学因素：浓度过高导致分子间相互作用、溶质解离/缔合/互变\n- 物理因素：非单色光、杂散光、溶液不均匀"},
+{s:"分析化学",q:"吸光度测量的最佳范围？",a:"A = 0.2 ~ 0.8（T = 15% ~ 65%）\n此范围内测量相对误差最小\nA ≈ 0.434 时误差最小"},
+{s:"分析化学",q:"酸碱滴定突跃范围与什么因素有关？如何判断？",a:"与酸碱的浓度 c 和 Ka（或 Kb）有关：\n- c 越大，突跃越大\n- Ka 越大（酸越强），突跃越大\n准确滴定条件：c·Ka ≥ 10⁻⁸（或 lg(cKa) ≥ -8）\n多元酸分步滴定条件：Ka₁/Ka₂ ≥ 10⁴"},
+{s:"军理",q:"国防的定义是什么？",a:"国防是国家为防备和抵抗侵略，制止武装颠覆和分裂，保卫国家主权、统一、领土完整、安全和发展利益所进行的军事活动，以及与军事有关的政治、经济、外交、科技、教育等方面的活动"},
+{s:"军理",q:"国防的基本类型有哪些？",a:"四种类型：\n1. 扩张型：追求世界霸权（如美国）\n2. 自卫型：以防御为目的（如中国）\n3. 联盟型：与他国结盟共同防御（如北约成员国）\n4. 中立型：不与任何国家结盟（如瑞士、瑞典）"},
+{s:"军理",q:"我国国防政策的基本内容？",a:"1. 维护国家主权、安全、发展利益\n2. 坚持防御性国防政策\n3. 实行积极防御军事战略方针\n4. 坚持走中国特色强军之路\n5. 不搞军备竞赛，不对任何国家构成军事威胁\n6. 永远不称霸、永远不搞扩张"},
+{s:"军理",q:"《孙子兵法》的核心思想有哪些？",a:"1. \"知己知彼，百战不殆\"——强调情报与了解敌我\n2. \"不战而屈人之兵\"——全胜思想\n3. \"兵者，诡道也\"——灵活用兵\n4. \"兵贵胜，不贵久\"——速战速决\n5. 五事七计（道天地将法）"},
+{s:"军理",q:"毛泽东军事思想的核心内容？",a:"1. 人民战争思想：兵民是胜利之本\n2. 人民军队建设：党指挥枪，支部建在连上\n3. 战略战术：\n   - 游击战十六字诀：\"敌进我退，敌驻我扰，敌疲我打，敌退我追\"\n   - 集中优势兵力，各个歼灭敌人\n   - 积极防御战略方针"},
+{s:"军理",q:"信息化战争的主要特点？",a:"1. 信息主导：信息成为战斗力的核心要素\n2. 体系对抗：陆海空天电网一体化联合作战\n3. 精确打击：精确制导武器大量使用\n4. 实时感知：战场透明度大幅提高\n5. 非接触作战：超视距、远程精确打击\n6. 非线性作战：前后方界限模糊\n7. 作战节奏加快：OODA 循环缩短"},
+{s:"军理",q:"精确制导武器的主要分类？",a:"按制导方式分：\n1. 自主制导：惯性制导、地形匹配制导\n2. 遥控制导：无线电指令制导、电视制导\n3. 寻的制导：红外寻的、雷达寻的、激光制导\n4. 复合制导：多种方式组合"},
+{s:"军理",q:"C4ISR 系统中各字母的含义？",a:"C — Command（指挥）\nC — Control（控制）\nC — Communication（通信）\nC — Computer（计算机）\nI — Intelligence（情报）\nS — Surveillance（监视）\nR — Reconnaissance（侦察）\n是信息化战争的\"神经中枢\""},
+{s:"军理",q:"当前国际战略格局的基本特征？",a:"1. \"一超多强\"格局向多极化演变\n2. 美国霸权地位相对下降但仍是唯一超级大国\n3. 中国、俄罗斯、欧盟等力量崛起\n4. 经济全球化与政治多极化并行\n5. 大国关系既竞争又合作\n6. 地区热点问题此起彼伏"},
+{s:"军理",q:"非传统安全威胁有哪些主要类型？",a:"1. 恐怖主义\n2. 网络安全威胁\n3. 跨国犯罪\n4. 生态环境安全\n5. 公共卫生安全\n6. 能源安全\n7. 金融安全\n8. 太空安全\n9. 难民问题"},
+{s:"军理",q:"我国周边安全环境的主要挑战？",a:"1. 台湾问题：国家统一的核心问题\n2. 南海争端：岛礁主权与海洋权益\n3. 钓鱼岛问题：中日领土争端\n4. 朝鲜半岛局势\n5. 中印边境问题\n6. 美国\"印太战略\"围堵\n7. 恐怖主义渗透（西部边疆）"},
+{s:"军理",q:"中国人民解放军的五大军种？",a:"1. 陆军\n2. 海军\n3. 空军\n4. 火箭军（原第二炮兵，2015年改组）\n5. 战略支援部队（2015年成立）\n另设联勤保障部队"},
+{s:"军理",q:"积极防御军事战略方针的要点？",a:"核心：后发制人，不打第一枪\n要点：\n1. 战略上防御，战役战斗上攻势作战\n2. 防御中有进攻，持久中有速决\n3. 内线中有外线\n实质：攻防结合，以防御为主要战略形态"},
+{s:"军理",q:"什么是军事高技术？其主要领域有哪些？",a:"军事高技术是应用于军事领域的高技术\n主要领域：\n1. 信息技术（C4ISR、数据链）\n2. 航天技术（军事卫星、反卫星）\n3. 新材料技术（隐身材料、装甲）\n4. 新能源技术（核动力、激光）\n5. 生物技术\n6. 海洋技术"},
+{s:"军理",q:"OODA 循环是什么？在信息化战争中的意义？",a:"OODA = Observe（观察）→ Orient（判断）→ Decide（决策）→ Act（行动）\n由美国空军上校约翰·博伊德提出\n意义：信息化战争的制胜关键在于缩短己方 OODA 循环、打乱敌方 OODA 循环"}
+];
+const SUBJECTS={
+"高数":{color:"#6c5ce7",label:"高数"},
+"有机":{color:"#e17055",label:"有机"},
+"概统":{color:"#00b894",label:"概统"},
+"大物":{color:"#0984e3",label:"大物"},
+"普生":{color:"#fdcb6e",label:"普生"},
+"习思想":{color:"#d63031",label:"习思想"},
+"分析化学":{color:"#00cec9",label:"分析化学"},
+"军理":{color:"#636e72",label:"军理"}
+};
+const PWD="YOUR_PASSWORD";
+const LS_KEY="fc_data_v2";
+const LS_STREAK="fc_streak";
+let state={filter:"all",todayMode:false,currentIdx:0,flipped:false,queue:[],sessionDone:0};
+function checkPwd(){ return; // password disabled
+  if(false){
+  let ok=localStorage.getItem("fc_auth");
+  if(ok==="1")return;
+  let tries=3;
+  while(tries>0){
+    let p=prompt("请输入密码以访问闪卡：");
+    if(p===PWD){localStorage.setItem("fc_auth","1");return;}
+    tries--;
+    if(tries>0)alert("密码错误，还有"+tries+"次机会");
+  }
+  document.body.innerHTML='<div style="text-align:center;padding:100px;color:#d63031;font-size:1.5em">密码错误</div>';
+  throw new Error("auth");
+}
+function getData(){let d=localStorage.getItem(LS_KEY);return d?JSON.parse(d):{};}
+function saveData(d){localStorage.setItem(LS_KEY,JSON.stringify(d));}
+function getCardData(i){let d=getData();return d[i]||{ease:"new",next:0,reviews:0,correct:0};}
+function setCardData(i,cd){let d=getData();d[i]=cd;saveData(d);}
+function isDue(i){let cd=getCardData(i);return cd.ease==="new"||Date.now()>=cd.next;}
+function updateStreak(){
+  let raw=localStorage.getItem(LS_STREAK);
+  let s=raw?JSON.parse(raw):{date:"",count:0};
+  let today=new Date().toISOString().slice(0,10);
+  let yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  if(s.date===today)return s.count;
+  if(s.date===yesterday){s.count++;s.date=today;}
+  else{s.count=1;s.date=today;}
+  localStorage.setItem(LS_STREAK,JSON.stringify(s));
+  return s.count;
+}
+function getStreak(){
+  let raw=localStorage.getItem(LS_STREAK);
+  let s=raw?JSON.parse(raw):{date:"",count:0};
+  let today=new Date().toISOString().slice(0,10);
+  let yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  if(s.date===today||s.date===yesterday)return s.count;
+  return 0;
+}
+function buildQueue(){
+  let cards=[];
+  for(let i=0;i<CARDS.length;i++){
+    if(state.filter!=="all"&&CARDS[i].s!==state.filter)continue;
+    if(state.todayMode&&!isDue(i))continue;
+    cards.push(i);
+  }
+  for(let i=cards.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[cards[i],cards[j]]=[cards[j],cards[i]];}
+  cards.sort((a,b)=>(isDue(a)?0:1)-(isDue(b)?0:1));
+  state.queue=cards;state.currentIdx=0;state.flipped=false;
+}
+function renderFilters(){
+  let f=document.getElementById("filters");
+  let h='<button class="'+(state.filter==="all"?"active":"")+'" onclick="setFilter(\'all\')">全部</button>';
+  for(let k in SUBJECTS){
+    h+='<button class="'+(state.filter===k?"active":"")+'" onclick="setFilter(\''+k+'\')">'+SUBJECTS[k].label+'</button>';
+  }
+  f.innerHTML=h;
+}
+function setFilter(f){state.filter=f;renderFilters();buildQueue();renderCard();updateStats();}
+function toggleToday(){
+  state.todayMode=!state.todayMode;
+  document.getElementById("btnToday").classList.toggle("active",state.todayMode);
+  buildQueue();renderCard();updateStats();
+}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function renderCard(){
+  let area=document.getElementById("cardArea");
+  let btnRow=document.getElementById("btnRow");
+  let hint=document.getElementById("tapHint");
+  if(state.queue.length===0){
+    area.innerHTML='<div class="empty-state"><div class="emoji">&#127881;</div><div>'+(state.todayMode?'今日复习已完成！':'没有匹配的卡片')+'</div></div>';
+    btnRow.style.display="none";hint.style.display="none";return;
+  }
+  let ci=state.queue[state.currentIdx];
+  let c=CARDS[ci];
+  let cd=getCardData(ci);
+  let easeTag=cd.ease==="new"?"新卡":cd.ease==="easy"?"已掌握":cd.ease==="medium"?"复习中":"困难";
+  let subLabel=SUBJECTS[c.s]?SUBJECTS[c.s].label:c.s;
+  let numText=(state.currentIdx+1)+"/"+state.queue.length+" · "+easeTag;
+  let numText2=(state.currentIdx+1)+"/"+state.queue.length;
+  area.innerHTML='<div class="card-wrapper" onclick="flipCard()">'+
+    '<div class="card-inner" id="cardInner">'+
+    '<div class="card-front">'+
+    '<span class="card-subject">'+subLabel+'</span>'+
+    '<div class="q-label">问 题</div>'+
+    '<div class="card-content" id="qContent">'+escHtml(c.q)+'</div>'+
+    '<span class="card-num">'+numText+'</span>'+
+    '</div>'+
+    '<div class="card-back">'+
+    '<span class="card-subject">'+subLabel+'</span>'+
+    '<div class="q-label" style="color:rgba(255,255,255,.7)">答 案</div>'+
+    '<div class="card-content" id="aContent">'+escHtml(c.a)+'</div>'+
+    '<span class="card-num">'+numText2+'</span>'+
+    '</div></div></div>';
+  btnRow.style.display=state.flipped?"flex":"none";
+  hint.style.display=state.flipped?"none":"block";
+  hint.textContent="点击卡片翻转查看答案";
+  setTimeout(function(){
+    if(typeof renderMathInElement==='function'){
+      try{
+        var delims=[{left:"\$\$",right:"\$\$",display:true},{left:"\$",right:"\$",display:false},{left:"\\(",right:"\\)",display:false},{left:"\\[",right:"\\]",display:true}];
+        var qEl=document.getElementById("qContent");
+        var aEl=document.getElementById("aContent");
+        if(qEl)renderMathInElement(qEl,{delimiters:delims,throwOnError:false});
+        if(aEl)renderMathInElement(aEl,{delimiters:delims,throwOnError:false});
+      }catch(e){}
+    }
+  },50);
+}
+function flipCard(){
+  if(state.queue.length===0)return;
+  state.flipped=!state.flipped;
+  var inner=document.getElementById("cardInner");
+  if(inner)inner.classList.toggle("flipped",state.flipped);
+  document.getElementById("btnRow").style.display=state.flipped?"flex":"none";
+  document.getElementById("tapHint").style.display=state.flipped?"none":"block";
+}
+function rate(level){
+  var ci=state.queue[state.currentIdx];
+  var cd=getCardData(ci);
+  cd.reviews=(cd.reviews||0)+1;
+  var now=Date.now();
+  if(level==="easy"){cd.ease="easy";cd.correct=(cd.correct||0)+1;cd.next=now+4*86400000;}
+  else if(level==="medium"){cd.ease="medium";cd.correct=(cd.correct||0)+1;cd.next=now+86400000;}
+  else{cd.ease="hard";cd.next=now+600000;}
+  setCardData(ci,cd);
+  state.sessionDone++;
+  updateStreak();
+  state.currentIdx++;
+  if(state.currentIdx>=state.queue.length){
+    if(state.todayMode){buildQueue();}
+    else{state.currentIdx=0;}
+  }
+  state.flipped=false;
+  renderCard();updateStats();
+}
+function updateStats(){
+  var total=0,due=0;
+  for(var i=0;i<CARDS.length;i++){
+    if(state.filter!=="all"&&CARDS[i].s!==state.filter)continue;
+    total++;if(isDue(i))due++;
+  }
+  document.getElementById("sTotal").textContent=total;
+  document.getElementById("sDue").textContent=due;
+  document.getElementById("sDone").textContent=state.sessionDone;
+  document.getElementById("sStreak").textContent=getStreak();
+}
+function openPanel(){
+  document.getElementById("panel").classList.add("open");
+  document.getElementById("panelOverlay").classList.add("open");
+  renderMastery();
+}
+function closePanel(){
+  document.getElementById("panel").classList.remove("open");
+  document.getElementById("panelOverlay").classList.remove("open");
+}
+function renderMastery(){
+  var list=document.getElementById("masteryList");
+  var html="";
+  var d=getData();
+  var tAll=CARDS.length,mAll=0;
+  for(var i=0;i<CARDS.length;i++){if(d[i]&&d[i].ease==="easy")mAll++;}
+  var opAll=tAll?Math.round(mAll/tAll*100):0;
+  html+='<div class="mastery-item" style="margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid rgba(128,128,128,.2)">';
+  html+='<span class="mastery-label" style="font-weight:700">总体</span>';
+  html+='<div class="mastery-bar-bg"><div class="mastery-bar" style="width:'+opAll+'%"></div></div>';
+  html+='<span class="mastery-pct" style="font-weight:700">'+mAll+'/'+tAll+' ('+opAll+'%)</span></div>';
+  for(var k in SUBJECTS){
+    var total=0,mastered=0;
+    for(var i=0;i<CARDS.length;i++){
+      if(CARDS[i].s!==k)continue;total++;
+      if(d[i]&&d[i].ease==="easy")mastered++;
+    }
+    var pct=total?Math.round(mastered/total*100):0;
+    html+='<div class="mastery-item">';
+    html+='<span class="mastery-label">'+SUBJECTS[k].label+'</span>';
+    html+='<div class="mastery-bar-bg"><div class="mastery-bar" style="width:'+pct+'%;background:'+SUBJECTS[k].color+'"></div></div>';
+    html+='<span class="mastery-pct">'+mastered+'/'+total+'</span></div>';
+  }
+  html+='<div style="margin-top:20px;padding-top:14px;border-top:1px solid rgba(128,128,128,.2);font-size:.85em;color:var(--text2)">';
+  html+='<p>已复习 '+state.sessionDone+' 张（本次）</p>';
+  html+='<p>连续学习 '+getStreak()+' 天</p>';
+  html+='<p style="margin-top:10px"><button onclick="if(confirm(\'确定重置？\'))resetAll()" style="padding:6px 16px;border-radius:8px;border:1px solid #d63031;background:transparent;color:#d63031;cursor:pointer">重置数据</button></p></div>';
+  list.innerHTML=html;
+}
+function resetAll(){
+  localStorage.removeItem(LS_KEY);localStorage.removeItem(LS_STREAK);
+  state.sessionDone=0;buildQueue();renderCard();updateStats();closePanel();
+}
+function toggleTheme(){
+  var t=document.body.getAttribute("data-theme")==="dark"?"light":"dark";
+  document.body.setAttribute("data-theme",t);
+  document.getElementById("btnTheme").textContent=t==="dark"?"\u2600\uFE0F":"\uD83C\uDF19";
+  localStorage.setItem("fc_theme",t);
+}
+var touchStartX=0,touchStartY=0;
+document.addEventListener("touchstart",function(e){touchStartX=e.touches[0].clientX;touchStartY=e.touches[0].clientY;},{passive:true});
+document.addEventListener("touchend",function(e){
+  var dx=e.changedTouches[0].clientX-touchStartX;
+  var dy=e.changedTouches[0].clientY-touchStartY;
+  if(Math.abs(dx)<50||Math.abs(dy)>Math.abs(dx))return;
+  if(!state.flipped){flipCard();return;}
+  if(dx<-50)rate("hard");
+  else if(dx>50)rate("easy");
+},{passive:true});
+document.addEventListener("keydown",function(e){
+  if(e.key===" "||e.key==="Enter"){e.preventDefault();flipCard();}
+  if(state.flipped){
+    if(e.key==="1"||e.key==="h")rate("hard");
+    if(e.key==="2"||e.key==="m")rate("medium");
+    if(e.key==="3"||e.key==="e")rate("easy");
+    if(e.key==="ArrowLeft")rate("hard");
+    if(e.key==="ArrowRight")rate("easy");
+    if(e.key==="ArrowDown")rate("medium");
+  }
+});
+checkPwd();
+var savedTheme=localStorage.getItem("fc_theme");
+if(savedTheme){document.body.setAttribute("data-theme",savedTheme);document.getElementById("btnTheme").textContent=savedTheme==="dark"?"\u2600\uFE0F":"\uD83C\uDF19";}
+renderFilters();buildQueue();renderCard();updateStats();
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+/* Floating save button */
+#gto-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99999;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+  font-size: 22px;
+}
+#gto-fab:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.6);
+}
+
+/* Save panel */
+#gto-panel {
+  position: fixed;
+  bottom: 88px;
+  right: 24px;
+  z-index: 99999;
+  width: 340px;
+  background: #1e1e2e;
+  border: 1px solid #333;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  font-family: -apple-system, 'Segoe UI', sans-serif;
+  color: #e0e0e0;
+  display: none;
+}
+#gto-panel.show { display: block; }
+
+#gto-panel h3 {
+  margin: 0 0 14px 0;
+  font-size: 16px;
+  color: #c4b5fd;
+}
+
+#gto-panel label {
+  display: block;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 4px;
+  margin-top: 10px;
+}
+
+#gto-panel select,
+#gto-panel input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  background: #2a2a3e;
+  border: 1px solid #444;
+  border-radius: 8px;
+  color: #e0e0e0;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+#gto-panel select:focus,
+#gto-panel input:focus {
+  border-color: #7c3aed;
+}
+
+#gto-panel .gto-range {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+#gto-panel .gto-range span {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+}
+
+/* Checkboxes for message selection */
+.gto-msg-check {
+  position: absolute;
+  top: 8px;
+  right: -32px;
+  width: 20px;
+  height: 20px;
+  accent-color: #7c3aed;
+  cursor: pointer;
+  z-index: 99998;
+}
+
+/* Buttons */
+#gto-panel .gto-btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+#gto-panel button.gto-btn {
+  flex: 1;
+  padding: 10px 0;
+  border: none;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+#gto-panel button.gto-btn:hover { opacity: 0.85; }
+#gto-panel button.gto-primary {
+  background: #7c3aed;
+  color: #fff;
+}
+#gto-panel button.gto-secondary {
+  background: #333;
+  color: #ccc;
+}
+
+/* Status */
+#gto-status {
+  margin-top: 10px;
+  font-size: 12px;
+  text-align: center;
+  min-height: 18px;
+}
+#gto-status.success { color: #4ade80; }
+#gto-status.error { color: #f87171; }
+#gto-status.loading { color: #fbbf24; }

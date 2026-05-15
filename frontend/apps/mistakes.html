@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>错题本</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+window.addEventListener("DOMContentLoaded",function(){var o=document.getElementById("login-overlay");if(o)o.style.display="none";var a=document.getElementById("main-app");if(a)a.style.display="block";});
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg1:#0f0c29;--bg2:#302b63;--bg3:#24243e;--card:#1a1a3e;--accent:#6c63ff;--accent2:#ff6584;--text:#e0e0e0;--text2:#aaa;--green:#4caf50;--border:rgba(255,255,255,0.08)}
+body{font-family:'Segoe UI','Microsoft YaHei',sans-serif;background:linear-gradient(135deg,var(--bg1),var(--bg2),var(--bg3));color:var(--text);min-height:100vh}
+#login-overlay{position:fixed;inset:0;background:linear-gradient(135deg,var(--bg1),var(--bg2));display:none;align-items:center;justify-content:center;z-index:9999}
+.login-box{background:var(--card);padding:40px;border-radius:16px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+.login-box h2{margin-bottom:20px;font-size:24px}
+.login-box input{padding:12px 20px;border:2px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.05);color:#fff;font-size:16px;width:260px;outline:none}
+.login-box input:focus{border-color:var(--accent)}
+.login-box button{margin-top:16px;padding:12px 36px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-size:16px;cursor:pointer}
+.login-box .err{color:var(--accent2);margin-top:10px;font-size:14px;min-height:20px}
+.container{max-width:900px;margin:0 auto;padding:20px}
+header{text-align:center;padding:24px 0 10px}
+header h1{font-size:26px;background:linear-gradient(90deg,#6c63ff,#ff6584);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0;align-items:center}
+.toolbar input,.toolbar select{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.05);color:#fff;font-size:14px;outline:none}
+.toolbar input:focus,.toolbar select:focus{border-color:var(--accent)}
+.toolbar select option{background:#1a1a3e}
+.btn{padding:8px 18px;border:none;border-radius:8px;cursor:pointer;font-size:14px;color:#fff;transition:opacity .2s}
+.btn:hover{opacity:0.85}
+.btn-primary{background:var(--accent)}
+.btn-danger{background:var(--accent2)}
+.btn-green{background:var(--green)}
+.btn-outline{background:transparent;border:1px solid var(--accent);color:var(--accent)}
+.btn-sm{padding:5px 12px;font-size:12px}
+.form-card{background:var(--card);border-radius:12px;padding:24px;margin:16px 0;box-shadow:0 2px 12px rgba(0,0,0,0.2);display:none}
+.form-card.open{display:block}
+.form-card h3{margin-bottom:16px;font-size:18px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;color:var(--text2);margin-bottom:4px}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.05);color:#fff;font-size:14px;outline:none;resize:vertical}
+.form-group textarea{min-height:80px;font-family:inherit}
+.form-group input:focus,.form-group textarea:focus{border-color:var(--accent)}
+.tag-input-wrap{display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.05);min-height:40px;align-items:center}
+.tag-input-wrap input{border:none;background:none;outline:none;color:#fff;font-size:14px;flex:1;min-width:80px;padding:2px}
+.tag-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(108,99,255,0.2);color:var(--accent);padding:3px 10px;border-radius:20px;font-size:12px}
+.tag-badge .tag-x{cursor:pointer;font-weight:700;opacity:0.7}
+.tag-badge .tag-x:hover{opacity:1}
+.mistake-card{background:var(--card);border-radius:12px;padding:20px;margin:12px 0;box-shadow:0 2px 12px rgba(0,0,0,0.2);position:relative}
+.mistake-card .mc-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px}
+.mc-subj{font-size:12px;padding:3px 10px;border-radius:20px;background:rgba(108,99,255,0.15);color:var(--accent)}
+.mc-date{font-size:12px;color:var(--text2)}
+.mc-tags{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0}
+.mc-section{margin:10px 0}
+.mc-section-title{font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:600}
+.mc-content{font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.mc-img{max-width:100%;border-radius:8px;margin-top:8px;cursor:pointer}
+.mc-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.hidden-answer{filter:blur(8px);user-select:none;cursor:pointer;transition:filter .3s}
+.hidden-answer:hover{filter:blur(4px)}
+.hidden-answer.revealed{filter:none;user-select:auto;cursor:default}
+.img-upload-area{border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;color:var(--text2);cursor:pointer;font-size:13px;transition:border-color .2s}
+.img-upload-area:hover{border-color:var(--accent)}
+.img-upload-area img{max-width:100%;max-height:200px;border-radius:6px;margin-top:8px}
+.stats{text-align:center;font-size:13px;color:var(--text2);margin:10px 0}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text2)}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--card);border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto}
+.modal h3{margin-bottom:16px}
+.review-toggle{position:fixed;bottom:20px;right:20px;z-index:100}
+@media(max-width:600px){.container{padding:12px}header h1{font-size:20px}.toolbar{flex-direction:column}}
+</style>
+</head>
+<body>
+
+<div id="login-overlay">
+<div class="login-box">
+<h2>📝 错题本</h2>
+<p style="color:#aaa;margin-bottom:20px;font-size:14px">请输入密码以访问</p>
+<input type="password" id="pwd-input" placeholder="输入密码..." onkeydown="if(event.key==='Enter')doLogin()">
+<br><button onclick="doLogin()">进 入</button>
+<div class="err" id="pwd-err"></div>
+</div>
+</div>
+
+<div class="container" id="main-app">
+<header><h1>📝 在线错题本</h1></header>
+
+<div class="toolbar">
+<input type="text" id="search-input" placeholder="搜索题目/要点..." oninput="renderList()" style="flex:1;min-width:140px">
+<select id="filter-subj" onchange="renderList()"><option value="">全部科目</option></select>
+<select id="filter-tag" onchange="renderList()"><option value="">全部标签</option></select>
+<button class="btn btn-primary" onclick="toggleForm()">+ 添加错题</button>
+<button class="btn btn-outline" onclick="toggleReview()">复习模式</button>
+<button class="btn btn-outline btn-sm" onclick="openImport()">导入</button>
+<button class="btn btn-outline btn-sm" onclick="exportMD()">导出MD</button>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="form-card" id="add-form">
+<h3 id="form-title">添加错题</h3>
+<div class="form-group">
+<label>科目</label>
+<select id="f-subj">
+<option>高等数学II</option><option>有机化学</option><option>概率统计</option>
+<option>大学物理</option><option>习近平新时代思想</option><option>分析化学</option>
+<option>普通生物学</option><option>人工智能基础</option><option>军事理论</option>
+</select>
+</div>
+<div class="form-group"><label>题目（支持 LaTeX：$...$）</label><textarea id="f-question" placeholder="输入题目..."></textarea></div>
+<div class="form-group"><label>答案/解析</label><textarea id="f-answer" placeholder="输入答案或解析..."></textarea></div>
+<div class="form-group"><label>关键要点</label><textarea id="f-takeaway" rows="2" placeholder="记住什么？易错点？"></textarea></div>
+<div class="form-group">
+<label>标签（回车添加）</label>
+<div class="tag-input-wrap" id="tag-wrap"><input id="f-tag-input" placeholder="输入标签后回车..." onkeydown="addTag(event)"></div>
+</div>
+<div class="form-group">
+<label>图片（点击上传或粘贴）</label>
+<div class="img-upload-area" id="img-area" onclick="document.getElementById('f-img').click()">
+点击选择图片或 Ctrl+V 粘贴
+<input type="file" id="f-img" accept="image/*" style="display:none" onchange="handleImg(event)">
+</div>
+</div>
+<div style="display:flex;gap:10px;margin-top:16px">
+<button class="btn btn-primary" onclick="saveMistake()">保存</button>
+<button class="btn btn-outline" onclick="cancelForm()">取消</button>
+</div>
+</div>
+
+<div id="mistake-list"></div>
+<div class="empty-state" id="empty-state" style="display:none">还没有错题，点击上方"添加错题"开始记录吧！</div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-bg" id="import-modal">
+<div class="modal">
+<h3>导入 Markdown</h3>
+<div class="form-group"><label>粘贴 Markdown 内容（每题以 ## 开头）</label>
+<textarea id="import-text" rows="12" placeholder="## 高等数学II&#10;**题目**: ...&#10;**答案**: ...&#10;**要点**: ...&#10;**标签**: tag1, tag2"></textarea></div>
+<div style="display:flex;gap:10px"><button class="btn btn-primary" onclick="doImport()">导入</button><button class="btn btn-outline" onclick="closeImport()">取消</button></div>
+</div>
+</div>
+
+<script>
+// --- Auth ---
+// Password disabled - moved to DOMContentLoaded
+function doLogin(){
+  if(document.getElementById('pwd-input').value==='YOUR_PASSWORD'){
+    document.getElementById('login-overlay').style.display='none';
+    document.getElementById('main-app').style.display='block';
+    sessionStorage.setItem('mt_auth','1');
+  } else { document.getElementById('pwd-err').textContent='密码错误'; }
+}
+if(sessionStorage.getItem('mt_auth')==='1'){
+// (old bypass removed)
+  document.getElementById('login-overlay').style.display='none';
+  document.getElementById('main-app').style.display='block';
+}
+
+// --- State ---
+let mistakes = JSON.parse(localStorage.getItem('mistakes_data')||'[]');
+let editingId = null;
+let currentTags = [];
+let currentImg = '';
+let reviewMode = false;
+
+const SUBJS = ['高等数学II','有机化学','概率统计','大学物理','习近平新时代思想','分析化学','普通生物学','人工智能基础','军事理论'];
+
+// --- Form ---
+function toggleForm(){
+  editingId=null; currentTags=[]; currentImg='';
+  document.getElementById('form-title').textContent='添加错题';
+  document.getElementById('f-question').value='';
+  document.getElementById('f-answer').value='';
+  document.getElementById('f-takeaway').value='';
+  document.getElementById('f-subj').selectedIndex=0;
+  renderFormTags();
+  document.getElementById('img-area').innerHTML='点击选择图片或 Ctrl+V 粘贴<input type="file" id="f-img" accept="image/*" style="display:none" onchange="handleImg(event)">';
+  document.getElementById('add-form').classList.toggle('open');
+}
+function cancelForm(){ document.getElementById('add-form').classList.remove('open'); }
+
+function addTag(e){
+  if(e.key==='Enter'){
+    e.preventDefault();
+    const v=e.target.value.trim();
+    if(v&&!currentTags.includes(v)){currentTags.push(v);renderFormTags();}
+    e.target.value='';
+  }
+}
+function removeTag(i){currentTags.splice(i,1);renderFormTags();}
+function renderFormTags(){
+  const wrap=document.getElementById('tag-wrap');
+  wrap.querySelectorAll('.tag-badge').forEach(e=>e.remove());
+  const inp=document.getElementById('f-tag-input');
+  currentTags.forEach((t,i)=>{
+    const span=document.createElement('span');
+    span.className='tag-badge';
+    span.innerHTML=`${t}<span class="tag-x" onclick="removeTag(${i})">&times;</span>`;
+    wrap.insertBefore(span,inp);
+  });
+}
+
+function handleImg(e){
+  const file=e.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    currentImg=ev.target.result;
+    document.getElementById('img-area').innerHTML=`<img src="${currentImg}"><input type="file" id="f-img" accept="image/*" style="display:none" onchange="handleImg(event)">`;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Paste image
+document.addEventListener('paste',function(e){
+  if(!document.getElementById('add-form').classList.contains('open'))return;
+  const items=e.clipboardData.items;
+  for(let item of items){
+    if(item.type.startsWith('image/')){
+      const file=item.getAsFile();
+      const reader=new FileReader();
+      reader.onload=function(ev){
+        currentImg=ev.target.result;
+        document.getElementById('img-area').innerHTML=`<img src="${currentImg}"><input type="file" id="f-img" accept="image/*" style="display:none" onchange="handleImg(event)">`;
+      };
+      reader.readAsDataURL(file);
+      break;
+    }
+  }
+});
+
+function saveMistake(){
+  const q=document.getElementById('f-question').value.trim();
+  const a=document.getElementById('f-answer').value.trim();
+  if(!q){alert('请输入题目');return;}
+  const item={
+    id: editingId || Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    subject: document.getElementById('f-subj').value,
+    question: q,
+    answer: a,
+    takeaway: document.getElementById('f-takeaway').value.trim(),
+    tags: [...currentTags],
+    image: currentImg,
+    date: editingId ? (mistakes.find(m=>m.id===editingId)||{}).date||new Date().toISOString() : new Date().toISOString(),
+    updated: new Date().toISOString()
+  };
+  if(editingId){
+    const idx=mistakes.findIndex(m=>m.id===editingId);
+    if(idx>=0) mistakes[idx]=item;
+  } else {
+    mistakes.unshift(item);
+  }
+  saveAll(); cancelForm(); renderList();
+}
+
+function saveAll(){ localStorage.setItem('mistakes_data',JSON.stringify(mistakes)); }
+
+// --- Edit / Delete ---
+function editMistake(id){
+  const m=mistakes.find(x=>x.id===id); if(!m)return;
+  editingId=id;
+  document.getElementById('form-title').textContent='编辑错题';
+  document.getElementById('f-subj').value=m.subject;
+  document.getElementById('f-question').value=m.question;
+  document.getElementById('f-answer').value=m.answer;
+  document.getElementById('f-takeaway').value=m.takeaway||'';
+  currentTags=[...(m.tags||[])];
+  currentImg=m.image||'';
+  renderFormTags();
+  const area=document.getElementById('img-area');
+  if(currentImg) area.innerHTML=`<img src="${currentImg}"><input type="file" id="f-img" accept="image/*" style="display:none" onchange="handleImg(event)">`;
+  else area.innerHTML='点击选择图片或 Ctrl+V 粘贴<input type="file" id="f-img" accept="image/*" style="display:none" onchange="handleImg(event)">';
+  document.getElementById('add-form').classList.add('open');
+  document.getElementById('add-form').scrollIntoView({behavior:'smooth'});
+}
+function deleteMistake(id){
+  if(!confirm('确认删除这道错题？'))return;
+  mistakes=mistakes.filter(m=>m.id!==id);
+  saveAll(); renderList();
+}
+
+// --- Review mode ---
+function toggleReview(){
+  reviewMode=!reviewMode;
+  renderList();
+}
+
+// --- Render ---
+function renderList(){
+  const search=document.getElementById('search-input').value.toLowerCase();
+  const fSubj=document.getElementById('filter-subj').value;
+  const fTag=document.getElementById('filter-tag').value;
+  let filtered=mistakes.filter(m=>{
+    if(fSubj&&m.subject!==fSubj)return false;
+    if(fTag&&!(m.tags||[]).includes(fTag))return false;
+    if(search){
+      const hay=(m.question+' '+m.answer+' '+m.takeaway+' '+(m.tags||[]).join(' ')).toLowerCase();
+      if(!hay.includes(search))return false;
+    }
+    return true;
+  });
+  document.getElementById('stats').textContent=`共 ${mistakes.length} 道错题，当前显示 ${filtered.length} 道`;
+  const list=document.getElementById('mistake-list');
+  list.innerHTML='';
+  document.getElementById('empty-state').style.display=filtered.length?'none':'block';
+
+  filtered.forEach(m=>{
+    const card=document.createElement('div');
+    card.className='mistake-card';
+    const dateStr=new Date(m.date).toLocaleDateString('zh-CN');
+    const tagsHtml=(m.tags||[]).map(t=>`<span class="tag-badge">${t}</span>`).join('');
+    const answerClass=reviewMode?'hidden-answer':'';
+    card.innerHTML=`
+      <div class="mc-header">
+        <span class="mc-subj">${m.subject}</span>
+        <span class="mc-date">${dateStr}</span>
+      </div>
+      ${tagsHtml?`<div class="mc-tags">${tagsHtml}</div>`:''}
+      <div class="mc-section">
+        <div class="mc-section-title">题目</div>
+        <div class="mc-content">${escHtml(m.question)}</div>
+      </div>
+      <div class="mc-section">
+        <div class="mc-section-title">答案/解析</div>
+        <div class="mc-content ${answerClass}" onclick="this.classList.toggle('revealed')">${escHtml(m.answer||'暂无')}</div>
+      </div>
+      ${m.takeaway?`<div class="mc-section"><div class="mc-section-title">关键要点</div><div class="mc-content ${answerClass}" onclick="this.classList.toggle('revealed')">${escHtml(m.takeaway)}</div></div>`:''}
+      ${m.image?`<img class="mc-img" src="${m.image}" onclick="window.open(this.src)">`:''}
+      <div class="mc-actions">
+        <button class="btn btn-outline btn-sm" onclick="editMistake('${m.id}')">编辑</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteMistake('${m.id}')">删除</button>
+      </div>`;
+    list.appendChild(card);
+  });
+  // Render LaTeX
+  renderMathInElement(list,{delimiters:[
+    {left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},
+    {left:'\\(',right:'\\)',display:false},{left:'\\[',right:'\\]',display:true}
+  ],throwOnError:false});
+}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// --- Filters ---
+function updateFilters(){
+  const subjSel=document.getElementById('filter-subj');
+  const tagSel=document.getElementById('filter-tag');
+  const curS=subjSel.value, curT=tagSel.value;
+  subjSel.innerHTML='<option value="">全部科目</option>';
+  tagSel.innerHTML='<option value="">全部标签</option>';
+  const subjs=new Set(), tags=new Set();
+  mistakes.forEach(m=>{subjs.add(m.subject);(m.tags||[]).forEach(t=>tags.add(t));});
+  subjs.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;subjSel.appendChild(o);});
+  tags.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;tagSel.appendChild(o);});
+  subjSel.value=curS; tagSel.value=curT;
+}
+
+// --- Export ---
+function exportMD(){
+  let md='# 错题本导出\n\n导出时间：'+new Date().toLocaleString('zh-CN')+'\n\n';
+  mistakes.forEach(m=>{
+    md+=`## ${m.subject}\n\n`;
+    md+=`**日期**: ${new Date(m.date).toLocaleDateString('zh-CN')}\n\n`;
+    md+=`**题目**: ${m.question}\n\n`;
+    md+=`**答案**: ${m.answer||'暂无'}\n\n`;
+    if(m.takeaway) md+=`**要点**: ${m.takeaway}\n\n`;
+    if(m.tags&&m.tags.length) md+=`**标签**: ${m.tags.join(', ')}\n\n`;
+    md+='---\n\n';
+  });
+  const blob=new Blob([md],{type:'text/markdown;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='错题本_'+new Date().toISOString().slice(0,10)+'.md';
+  a.click();
+}
+
+// --- Import ---
+function openImport(){document.getElementById('import-modal').classList.add('open');}
+function closeImport(){document.getElementById('import-modal').classList.remove('open');document.getElementById('import-text').value='';}
+function doImport(){
+  const text=document.getElementById('import-text').value;
+  if(!text.trim()){alert('请粘贴内容');return;}
+  const sections=text.split(/^## /m).filter(s=>s.trim());
+  let count=0;
+  sections.forEach(sec=>{
+    const lines=sec.trim().split('\n');
+    const subject=lines[0].trim();
+    const get=(key)=>{
+      const line=lines.find(l=>l.startsWith(`**${key}**:`)||l.startsWith(`**${key}**: `));
+      return line?line.replace(new RegExp(`^\\*\\*${key}\\*\\*:\\s*`),'').trim():'';
+    };
+    const question=get('题目')||get('题目');
+    const answer=get('答案');
+    const takeaway=get('要点');
+    const tagsStr=get('标签');
+    const tags=tagsStr?tagsStr.split(/[,，]/).map(t=>t.trim()).filter(Boolean):[];
+    if(question||answer){
+      mistakes.unshift({
+        id:Date.now().toString(36)+Math.random().toString(36).slice(2,6)+(count++),
+        subject:SUBJS.includes(subject)?subject:'高等数学II',
+        question, answer, takeaway, tags, image:'',
+        date:new Date().toISOString(), updated:new Date().toISOString()
+      });
+    }
+  });
+  saveAll(); closeImport(); updateFilters(); renderList();
+  alert(`成功导入 ${count} 道错题`);
+}
+
+// --- Init ---
+updateFilters();
+renderList();
+</script>
+</body>
+</html>

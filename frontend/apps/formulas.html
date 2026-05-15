@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>公式速查表</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js">init();</script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js">init();</script>
+<style>
+:root{--bg:#f5f7fa;--card:#fff;--text:#1a1a2e;--text2:#555;--accent:#4361ee;--accent2:#3a0ca3;--border:#e0e0e0;--hover:#f0f4ff;--fav:#f59e0b;--shadow:0 2px 8px rgba(0,0,0,.08);--sidebar-w:220px;--topbar:56px}
+[data-theme=dark]{--bg:#0f0f1a;--card:#1a1a2e;--text:#e0e0e0;--text2:#aaa;--accent:#7c8cf8;--accent2:#b8c0ff;--border:#2a2a3e;--hover:#252540;--shadow:0 2px 8px rgba(0,0,0,.3)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);transition:background .3s,color .3s}
+/* Password overlay */
+#pw-overlay{position:fixed;inset:0;background:linear-gradient(135deg,#4361ee,#3a0ca3);z-index:9999;display:flex;align-items:center;justify-content:center}
+#pw-box{background:#fff;border-radius:16px;padding:40px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);max-width:380px;width:90%}
+#pw-box h2{margin-bottom:8px;color:#1a1a2e}
+#pw-box p{color:#666;margin-bottom:20px;font-size:14px}
+#pw-box input{width:100%;padding:12px 16px;border:2px solid #e0e0e0;border-radius:8px;font-size:16px;outline:none;transition:border .2s}
+#pw-box input:focus{border-color:#4361ee}
+#pw-box button{margin-top:16px;width:100%;padding:12px;background:#4361ee;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;transition:background .2s}
+#pw-box button:hover{background:#3a0ca3}
+#pw-err{color:#e53e3e;font-size:13px;margin-top:8px;display:none}
+/* Top bar */
+#topbar{position:fixed;top:0;left:0;right:0;height:var(--topbar);background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;z-index:100;box-shadow:var(--shadow)}
+#topbar h1{font-size:18px;white-space:nowrap;color:var(--accent2)}
+#search-box{flex:1;max-width:420px;padding:8px 14px;border:2px solid var(--border);border-radius:8px;font-size:15px;background:var(--bg);color:var(--text);outline:none;transition:border .2s}
+#search-box:focus{border-color:var(--accent)}
+.top-btns{display:flex;gap:8px;align-items:center}
+.top-btns button{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px;color:var(--text);transition:all .2s}
+.top-btns button:hover,.top-btns button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+#theme-btn{font-size:18px;background:none;border:none;cursor:pointer;padding:4px 8px}
+#sidebar-toggle{display:none;font-size:20px;background:none;border:none;cursor:pointer;color:var(--text)}
+/* Sidebar */
+#sidebar{position:fixed;top:var(--topbar);left:0;width:var(--sidebar-w);height:calc(100vh - var(--topbar));background:var(--card);border-right:1px solid var(--border);overflow-y:auto;padding:12px 0;z-index:90;transition:transform .3s}
+#sidebar a{display:block;padding:6px 16px;font-size:13px;color:var(--text2);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all .15s}
+#sidebar a:hover,#sidebar a.active{background:var(--hover);color:var(--accent)}
+#sidebar .toc-subject{font-weight:700;color:var(--accent2);padding:10px 16px 4px;font-size:13px;text-transform:uppercase}
+/* Main */
+#main{margin-left:var(--sidebar-w);margin-top:var(--topbar);padding:20px 24px 60px}
+/* Tabs */
+#tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:8px 18px;border-radius:20px;border:1px solid var(--border);background:var(--card);cursor:pointer;font-size:14px;transition:all .2s;color:var(--text)}
+.tab:hover,.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* Sections */
+.subject-section{margin-bottom:32px}
+.subject-title{font-size:22px;font-weight:700;color:var(--accent2);margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid var(--accent)}
+.chapter{background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;box-shadow:var(--shadow);overflow:hidden}
+.chapter-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;user-select:none;transition:background .15s}
+.chapter-header:hover{background:var(--hover)}
+.chapter-header h3{font-size:16px;color:var(--text)}
+.chapter-header .arrow{transition:transform .2s;font-size:14px;color:var(--text2)}
+.chapter-header .arrow.open{transform:rotate(90deg)}
+.chapter-body{padding:0 16px 16px;display:none}
+.chapter-body.open{display:block}
+.formula-item{padding:10px 0;border-bottom:1px solid var(--border);position:relative}
+.formula-item:last-child{border-bottom:none}
+.formula-name{font-weight:600;font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.formula-content{font-size:15px;line-height:1.8;overflow-x:auto}
+.formula-content .katex-display{margin:.4em 0}
+.formula-note{font-size:13px;color:var(--text2);margin-top:4px}
+.fav-btn{background:none;border:none;cursor:pointer;font-size:16px;color:var(--border);transition:color .2s;flex-shrink:0}
+.fav-btn.fav{color:var(--fav)}
+table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px}
+th,td{border:1px solid var(--border);padding:6px 10px;text-align:left}
+th{background:var(--hover);font-weight:600}
+.highlight{background:#fef08a;border-radius:2px}
+[data-theme=dark] .highlight{background:#854d0e;color:#fef08a}
+.hidden{display:none!important}
+.no-results{text-align:center;padding:40px;color:var(--text2);font-size:16px}
+/* Mobile */
+@media(max-width:768px){
+#sidebar{transform:translateX(-100%)}
+#sidebar.show{transform:translateX(0)}
+#main{margin-left:0}
+#sidebar-toggle{display:block}
+#topbar h1{display:none}
+:root{--sidebar-w:260px}
+}
+/* Print */
+@media print{
+#topbar,#sidebar,#tabs,.top-btns,.fav-btn,#sidebar-toggle,#theme-btn{display:none!important}
+#main{margin:0;padding:10px}
+.chapter-body{display:block!important}
+.chapter{break-inside:avoid;box-shadow:none;border:1px solid #ccc}
+body{background:#fff;color:#000;font-size:12px}
+.subject-title{font-size:18px}
+}
+</style>
+</head>
+<body>
+<div id="pw-overlay" style="display:none">
+<div id="pw-box">
+<h2>公式速查表</h2>
+<p>请输入访问密码</p>
+<input type="password" id="pw-input" placeholder="密码" autofocus>
+<button onclick="checkPw()">进入</button>
+<div id="pw-err">密码错误，请重试</div>
+</div>
+</div>
+<div id="app">
+<div id="topbar">
+<button id="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('show')">☰</button>
+<h1>📐 公式速查表</h1>
+<input type="text" id="search-box" placeholder="搜索公式名称、关键词...">
+<div class="top-btns">
+<button id="fav-filter" onclick="toggleFavFilter()">⭐ 收藏</button>
+<button id="theme-btn" onclick="toggleTheme()">🌙</button>
+</div>
+</div>
+<div id="sidebar"></div>
+<div id="main">
+<div id="tabs"></div>
+<div id="content"></div>
+</div>
+</div>
+<script>
+const PW='YOUR_PASSWORD';
+function checkPw(){const v=document.getElementById('pw-input').value;if(v===PW){document.getElementById('pw-overlay').style.display='none';document.getElementById('app').style.display='';init();}else{document.getElementById('pw-err').style.display='block';}}
+if(document.getElementById('pw-overlay'))document.getElementById('pw-overlay').style.display='none';if(typeof init==='function')init();
+document.getElementById('pw-input').addEventListener('keydown',e=>{if(e.key==='Enter')checkPw();});
+
+const DATA=[
+{subject:'高等数学II',color:'#4361ee',sections:[
+{title:'多元微分学',formulas:[
+{name:'偏导数定义',latex:'f_x(x_0,y_0)=\\lim_{\\Delta x\\to 0}\\frac{f(x_0+\\Delta x,y_0)-f(x_0,y_0)}{\\Delta x}'},
+{name:'全微分',latex:'\\mathrm{d}z=f_x\\,\\mathrm{d}x+f_y\\,\\mathrm{d}y'},
+{name:'链式法则',latex:'\\frac{\\partial z}{\\partial x}=\\frac{\\partial f}{\\partial u}\\frac{\\partial u}{\\partial x}+\\frac{\\partial f}{\\partial v}\\frac{\\partial v}{\\partial x}'},
+{name:'隐函数求导',latex:'F(x,y)=0:\\;\\frac{\\mathrm{d}y}{\\mathrm{d}x}=-\\frac{F_x}{F_y}'},
+{name:'方向导数与梯度',latex:'\\frac{\\partial f}{\\partial l}=f_x\\cos\\alpha+f_y\\cos\\beta,\\quad\\nabla f=(f_x,f_y)'},
+{name:'切平面法向量',latex:'\\boldsymbol{n}=(F_x,F_y,F_z)'},
+{name:'极值判别',latex:'\\Delta=AC-B^2,\\;A=f_{xx},B=f_{xy},C=f_{yy};\\;\\Delta>0,A>0\\text{极小},\\;\\Delta<0\\text{鞍点}'},
+{name:'Lagrange乘数法',latex:'\\nabla f+\\lambda\\nabla\\varphi=\\boldsymbol{0},\\;\\varphi=0'},
+]},
+{title:'重积分',formulas:[
+{name:'二重积分（直角）',latex:'\\iint_D f\\,\\mathrm{d}\\sigma=\\int_a^b\\mathrm{d}x\\int_{\\varphi_1(x)}^{\\varphi_2(x)}f\\,\\mathrm{d}y'},
+{name:'极坐标面积元',latex:'\\mathrm{d}\\sigma=r\\,\\mathrm{d}r\\,\\mathrm{d}\\theta'},
+{name:'柱坐标体积元',latex:'\\mathrm{d}V=r\\,\\mathrm{d}r\\,\\mathrm{d}\\theta\\,\\mathrm{d}z'},
+{name:'球坐标体积元',latex:'\\mathrm{d}V=\\rho^2\\sin\\varphi\\,\\mathrm{d}\\rho\\,\\mathrm{d}\\varphi\\,\\mathrm{d}\\theta'},
+{name:'球坐标变换',latex:'x=\\rho\\sin\\varphi\\cos\\theta,\\;y=\\rho\\sin\\varphi\\sin\\theta,\\;z=\\rho\\cos\\varphi'},
+{name:'轮换对称性',latex:'\\iint x^2=\\iint y^2=\\frac{1}{2}\\iint(x^2+y^2)'},
+{name:'质心公式',latex:'\\bar{x}=\\frac{\\iint x\\rho\\,\\mathrm{d}\\sigma}{\\iint\\rho\\,\\mathrm{d}\\sigma}'},
+]},
+{title:'曲线曲面积分',formulas:[
+{name:'第一类曲线积分',latex:'\\int_L f\\,\\mathrm{d}s=\\int_\\alpha^\\beta f(x(t),y(t))\\sqrt{x\'^2+y\'^2}\\,\\mathrm{d}t'},
+{name:'第二类曲线积分',latex:'\\int_L P\\,\\mathrm{d}x+Q\\,\\mathrm{d}y=\\int_\\alpha^\\beta(Px\'+Qy\')\\,\\mathrm{d}t'},
+{name:'Green公式',latex:'\\oint_L P\\mathrm{d}x+Q\\mathrm{d}y=\\iint_D\\left(\\frac{\\partial Q}{\\partial x}-\\frac{\\partial P}{\\partial y}\\right)\\mathrm{d}\\sigma'},
+{name:'Green求面积',latex:'S=\\frac{1}{2}\\oint_L x\\,\\mathrm{d}y-y\\,\\mathrm{d}x'},
+{name:'路径无关条件',latex:'\\frac{\\partial P}{\\partial y}=\\frac{\\partial Q}{\\partial x}'},
+{name:'第一类曲面积分',latex:'\\iint_\\Sigma f\\,\\mathrm{d}S=\\iint_{D_{xy}}f\\sqrt{1+z_x^2+z_y^2}\\,\\mathrm{d}\\sigma'},
+{name:'Gauss公式',latex:'\\oiint P\\mathrm{d}y\\mathrm{d}z+Q\\mathrm{d}z\\mathrm{d}x+R\\mathrm{d}x\\mathrm{d}y=\\iiint\\left(\\frac{\\partial P}{\\partial x}+\\frac{\\partial Q}{\\partial y}+\\frac{\\partial R}{\\partial z}\\right)\\mathrm{d}V'},
+{name:'散度',latex:'\\mathrm{div}\\,\\boldsymbol{F}=\\frac{\\partial P}{\\partial x}+\\frac{\\partial Q}{\\partial y}+\\frac{\\partial R}{\\partial z}'},
+]},
+{title:'无穷级数',formulas:[
+{name:'比值判别法',latex:'\\lim\\frac{u_{n+1}}{u_n}=\\rho,\\;\\rho<1\\text{收},\\;\\rho>1\\text{散}'},
+{name:'根值判别法',latex:'\\lim\\sqrt[n]{u_n}=\\rho,\\;\\rho<1\\text{收},\\;\\rho>1\\text{散}'},
+{name:'Leibniz判别',latex:'(-1)^{n-1}u_n:\\;u_n\\downarrow 0\\Rightarrow\\text{收敛}'},
+{name:'收敛半径',latex:'R=\\lim\\left|\\frac{a_n}{a_{n+1}}\\right|'},
+{name:'e^x展开',latex:'e^x=\\sum\\frac{x^n}{n!}'},
+{name:'sin x展开',latex:'\\sin x=\\sum\\frac{(-1)^n x^{2n+1}}{(2n+1)!}'},
+{name:'1/(1-x)展开',latex:'\\frac{1}{1-x}=\\sum x^n,\\;|x|<1'},
+{name:'ln(1+x)展开',latex:'\\ln(1+x)=\\sum\\frac{(-1)^{n-1}x^n}{n},\\;-1<x\\le1'},
+{name:'Fourier系数',latex:'a_n=\\frac{1}{\\pi}\\int_{-\\pi}^{\\pi}f(x)\\cos nx\\,\\mathrm{d}x,\\;b_n=\\frac{1}{\\pi}\\int_{-\\pi}^{\\pi}f(x)\\sin nx\\,\\mathrm{d}x'},
+]}
+]},
+{subject:'概率统计',color:'#e63946',sections:[
+{title:'概率基础',formulas:[
+{name:'加法公式',latex:'P(A\\cup B)=P(A)+P(B)-P(AB)'},
+{name:'条件概率',latex:'P(A|B)=\\frac{P(AB)}{P(B)}'},
+{name:'全概率公式',latex:'P(B)=\\sum_{i=1}^n P(A_i)P(B|A_i)'},
+{name:'Bayes公式',latex:'P(A_k|B)=\\frac{P(A_k)P(B|A_k)}{\\sum_{i=1}^n P(A_i)P(B|A_i)}'},
+]},
+{title:'随机变量分布',formulas:[
+{name:'二项分布B(n,p)',latex:'P(X=k)=\\binom{n}{k}p^kq^{n-k},\\;E=np,\\;D=npq'},
+{name:'Poisson分布P(λ)',latex:'P(X=k)=\\frac{\\lambda^k}{k!}e^{-\\lambda},\\;E=D=\\lambda'},
+{name:'均匀分布U(a,b)',latex:'f=\\frac{1}{b-a},\\;E=\\frac{a+b}{2},\\;D=\\frac{(b-a)^2}{12}'},
+{name:'指数分布Exp(λ)',latex:'f=\\lambda e^{-\\lambda x},\\;E=1/\\lambda,\\;D=1/\\lambda^2'},
+{name:'正态分布标准化',latex:'X\\sim N(\\mu,\\sigma^2)\\Rightarrow\\frac{X-\\mu}{\\sigma}\\sim N(0,1)'},
+]},
+{title:'数字特征',formulas:[
+{name:'期望',latex:'E(X)=\\sum x_ip_i\\;\\text{或}\\;\\int xf(x)dx'},
+{name:'方差',latex:'D(X)=E(X^2)-[E(X)]^2'},
+{name:'协方差',latex:'\\text{Cov}(X,Y)=E(XY)-E(X)E(Y)'},
+{name:'相关系数',latex:'\\rho=\\frac{\\text{Cov}(X,Y)}{\\sqrt{D(X)}\\sqrt{D(Y)}}'},
+{name:'方差加减',latex:'D(X\\pm Y)=D(X)+D(Y)\\pm 2\\text{Cov}(X,Y)'},
+]},
+{title:'数理统计',formulas:[
+{name:'样本方差',latex:'S^2=\\frac{1}{n-1}\\sum(X_i-\\bar{X})^2'},
+{name:'Z统计量',latex:'\\frac{\\bar{X}-\\mu}{\\sigma/\\sqrt{n}}\\sim N(0,1)'},
+{name:'t统计量',latex:'\\frac{\\bar{X}-\\mu}{S/\\sqrt{n}}\\sim t(n-1)'},
+{name:'χ²统计量',latex:'\\frac{(n-1)S^2}{\\sigma^2}\\sim\\chi^2(n-1)'},
+{name:'Chebyshev不等式',latex:'P(|X-\\mu|\\ge\\varepsilon)\\le\\frac{\\sigma^2}{\\varepsilon^2}'},
+{name:'中心极限定理',latex:'\\frac{\\sum X_i-n\\mu}{\\sigma\\sqrt{n}}\\xrightarrow{d}N(0,1)'},
+{name:'μ置信区间(σ未知)',latex:'\\bar{X}\\pm t_{\\alpha/2}(n-1)\\frac{S}{\\sqrt{n}}'},
+{name:'MLE',latex:'L(\\theta)=\\prod f(x_i;\\theta),\\;\\frac{d\\ln L}{d\\theta}=0'},
+]}
+]},
+{subject:'大学物理',color:'#2a9d8f',sections:[
+{title:'运动学与牛顿定律',formulas:[
+{name:'匀变速公式',latex:'v=v_0+at,\\;x=v_0t+\\frac{1}{2}at^2,\\;v^2-v_0^2=2ax'},
+{name:'圆周运动',latex:'a_n=\\frac{v^2}{R}=\\omega^2R,\\;a_\\tau=R\\beta,\\;v=R\\omega'},
+{name:'万有引力',latex:'F=G\\frac{m_1m_2}{r^2}'},
+]},
+{title:'功与能',formulas:[
+{name:'动能定理',latex:'W_{\\text{合}}=\\frac{1}{2}mv_2^2-\\frac{1}{2}mv_1^2'},
+{name:'势能',latex:'E_p^{\\text{重}}=mgh,\\;E_p^{\\text{弹}}=\\frac{1}{2}kx^2,\\;E_p^{\\text{引}}=-\\frac{Gm_1m_2}{r}'},
+{name:'机械能守恒',latex:'E_k+E_p=\\text{const}\\;(\\text{仅保守力做功})'},
+]},
+{title:'动量与角动量',formulas:[
+{name:'动量定理',latex:'\\vec{I}=\\int\\vec{F}dt=\\Delta\\vec{p}'},
+{name:'角动量',latex:'\\vec{L}=\\vec{r}\\times m\\vec{v},\\;\\vec{M}=\\frac{d\\vec{L}}{dt}'},
+{name:'质心',latex:'\\vec{r}_c=\\frac{\\sum m_i\\vec{r}_i}{\\sum m_i}'},
+]},
+{title:'刚体力学',formulas:[
+{name:'转动惯量',latex:'J=\\int r^2dm'},
+{name:'常见J：棒中心',latex:'J=\\frac{1}{12}ML^2\\;(\\text{棒中心})'},
+{name:'常见J：圆盘',latex:'J=\\frac{1}{2}MR^2\\;(\\text{圆盘/实心柱})'},
+{name:'平行轴定理',latex:'J=J_c+Md^2'},
+{name:'转动定律',latex:'M=J\\beta'},
+{name:'转动动能',latex:'E_k=\\frac{1}{2}J\\omega^2'},
+]},
+{title:'狭义相对论',formulas:[
+{name:'Lorentz因子',latex:'\\gamma=\\frac{1}{\\sqrt{1-v^2/c^2}}'},
+{name:'时间膨胀',latex:'\\Delta t=\\gamma\\Delta t_0'},
+{name:'尺缩效应',latex:'L=L_0/\\gamma'},
+{name:'质能关系',latex:'E=\\gamma m_0c^2,\\;E_k=(\\gamma-1)m_0c^2'},
+{name:'能量动量关系',latex:'E^2=(pc)^2+(m_0c^2)^2'},
+]},
+{title:'振动与波动',formulas:[
+{name:'简谐振动',latex:'x=A\\cos(\\omega t+\\varphi)'},
+{name:'弹簧周期',latex:'T=2\\pi\\sqrt{m/k}'},
+{name:'单摆周期',latex:'T=2\\pi\\sqrt{L/g}'},
+{name:'振动合成振幅',latex:'A=\\sqrt{A_1^2+A_2^2+2A_1A_2\\cos(\\varphi_2-\\varphi_1)}'},
+{name:'波动方程',latex:'y=A\\cos\\left[\\omega\\left(t-\\frac{x}{u}\\right)+\\varphi_0\\right]'},
+{name:'波的强度',latex:'I=\\frac{1}{2}\\rho A^2\\omega^2 u'},
+{name:'多普勒效应',latex:'f\'=\\frac{u\\pm v_R}{u\\mp v_S}f_0'},
+]},
+{title:'热学',formulas:[
+{name:'理想气体',latex:'pV=\\nu RT=NkT'},
+{name:'分子平均能量',latex:'\\bar{E}_k=\\frac{i}{2}kT\\;(i:\\text{单}3,\\text{双}5,\\text{多}6)'},
+{name:'三速率',latex:'v_p=\\sqrt{\\frac{2kT}{m}}<\\bar{v}=\\sqrt{\\frac{8kT}{\\pi m}}<v_{rms}=\\sqrt{\\frac{3kT}{m}}'},
+{name:'热力学第一定律',latex:'Q=\\Delta E+W,\\;W=\\int pdV'},
+{name:'Mayer公式',latex:'C_p-C_V=R,\\;\\gamma=C_p/C_V=(i+2)/i'},
+{name:'绝热方程',latex:'pV^\\gamma=\\text{const},\\;TV^{\\gamma-1}=\\text{const}'},
+{name:'卡诺效率',latex:'\\eta=1-T_2/T_1'},
+{name:'熵变',latex:'\\Delta S=\\int\\frac{dQ_{\\text{rev}}}{T}=\\nu C_V\\ln\\frac{T_2}{T_1}+\\nu R\\ln\\frac{V_2}{V_1}'},
+]}
+]},
+{subject:'分析化学',color:'#f77f00',sections:[
+{title:'误差与数据处理',formulas:[
+{name:'绝对误差',latex:'E_a=x_i-x_T'},
+{name:'相对误差',latex:'E_r=\\frac{E_a}{x_T}\\times100\\%'},
+{name:'标准偏差',latex:'s=\\sqrt{\\frac{\\sum(x_i-\\bar{x})^2}{n-1}}'},
+{name:'置信区间',latex:'\\mu=\\bar{x}\\pm\\frac{t_{\\alpha,f}\\cdot s}{\\sqrt{n}}'},
+{name:'Grubbs检验',latex:'G=\\frac{|x_{\\text{可疑}}-\\bar{x}|}{s}'},
+]},
+{title:'酸碱滴定',formulas:[
+{name:'Henderson-Hasselbalch',latex:'pH=pK_a+\\lg\\frac{[A^-]}{[HA]}'},
+{name:'弱酸pH',latex:'pH=\\frac{1}{2}(pK_a-\\lg c)\\;(c/K_a>500)'},
+{name:'两性物质pH',latex:'pH=\\frac{1}{2}(pK_{a1}+pK_{a2})'},
+{name:'缓冲容量',latex:'\\beta=2.303\\cdot\\frac{CK_a[H^+]}{(K_a+[H^+])^2}'},
+]},
+{title:'EDTA配位滴定',formulas:[
+{name:'条件稳定常数',latex:'\\lg K\'_{MY}=\\lg K_{MY}-\\lg\\alpha_Y(H)-\\lg\\alpha_M(L)'},
+{name:'滴定可行性',latex:'\\lg K\'_{MY}\\ge6'},
+{name:'最低pH求法',latex:'\\lg\\alpha_Y(H)=\\lg K_{MY}-6'},
+]},
+{title:'氧化还原滴定',formulas:[
+{name:'Nernst方程',latex:'E=E^{\\ominus}+\\frac{0.0592}{n}\\lg\\frac{[Ox]}{[Red]}'},
+{name:'计量点电位',latex:'E_{sp}=\\frac{n_1E_1^{\\ominus\'}+n_2E_2^{\\ominus\'}}{n_1+n_2}'},
+{name:'平衡常数',latex:'\\lg K=\\frac{n(E_1^{\\ominus\'}-E_2^{\\ominus\'})}{0.0592}'},
+]},
+{title:'分光光度法',formulas:[
+{name:'Beer-Lambert定律',latex:'A=\\varepsilon bc=-\\lg T'},
+{name:'最佳吸光度',latex:'A=0.2\\sim0.8,\\;\\text{最佳}A\\approx0.434'},
+]},
+{title:'重量分析',formulas:[
+{name:'溶度积',latex:'K_{sp}=[M^{m+}]^a\\cdot[A^{n-}]^b'},
+{name:'换算因子',latex:'F=\\frac{M_{\\text{被测}}}{M_{\\text{称量}}}\\times\\text{计量系数比}'},
+]}
+]}
+];
+
+let favs=JSON.parse(localStorage.getItem('fml-favs')||'{}');
+let showFavOnly=false;
+let activeSubject='all';
+let searchTerm='';
+
+function init(){
+  const th=localStorage.getItem('fml-theme');
+  if(th==='dark')document.documentElement.setAttribute('data-theme','dark');
+  renderTabs();renderContent();renderSidebar();
+  document.getElementById('search-box').addEventListener('input',e=>{searchTerm=e.target.value.toLowerCase();renderContent();});
+}
+
+function toggleTheme(){
+  const d=document.documentElement;
+  const isDark=d.getAttribute('data-theme')==='dark';
+  d.setAttribute('data-theme',isDark?'':'dark');
+  localStorage.setItem('fml-theme',isDark?'':'dark');
+  document.getElementById('theme-btn').textContent=isDark?'🌙':'☀️';
+}
+
+function toggleFavFilter(){
+  showFavOnly=!showFavOnly;
+  document.getElementById('fav-filter').classList.toggle('active',showFavOnly);
+  renderContent();
+}
+
+function renderTabs(){
+  const c=document.getElementById('tabs');
+  let h='<div class="tab'+(activeSubject==='all'?' active':'')+'" onclick="setSubject(\'all\')">全部</div>';
+  DATA.forEach(s=>{h+='<div class="tab'+(activeSubject===s.subject?' active':'')+'" style="--accent:'+s.color+'" onclick="setSubject(\''+s.subject+'\')">'+s.subject+'</div>';});
+  c.innerHTML=h;
+}
+
+function setSubject(s){activeSubject=s;renderTabs();renderContent();}
+
+function fmtKey(subj,sec,fname){return subj+'|'+sec+'|'+fname;}
+
+function toggleFav(key,btn){
+  if(favs[key])delete favs[key];else favs[key]=1;
+  localStorage.setItem('fml-favs',JSON.stringify(favs));
+  btn.classList.toggle('fav');
+}
+
+function renderContent(){
+  const c=document.getElementById('content');
+  let html='';let total=0;let shown=0;
+  DATA.forEach(subj=>{
+    if(activeSubject!=='all'&&activeSubject!==subj.subject)return;
+    let secHtml='';let subjectHasMatch=false;
+    subj.sections.forEach(sec=>{
+      let items='';let secHasMatch=false;
+      sec.formulas.forEach(f=>{
+        total++;
+        const key=fmtKey(subj.subject,sec.title,f.name);
+        if(showFavOnly&&!favs[key])return;
+        if(searchTerm&&!f.name.toLowerCase().includes(searchTerm)&&!f.latex.toLowerCase().includes(searchTerm)&&!sec.title.toLowerCase().includes(searchTerm))return;
+        secHasMatch=true;shown++;
+        const isFav=favs[key]?'fav':'';
+        let nameHtml=searchTerm?f.name.replace(new RegExp('('+searchTerm.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<span class="highlight">$1</span>'):f.name;
+        items+=`<div class="formula-item"><div class="formula-name"><button class="fav-btn ${isFav}" onclick="toggleFav('${key}',this)">★</button>${nameHtml}</div><div class="formula-content">$$${f.latex}$$</div></div>`;
+      });
+      if(secHasMatch){
+        subjectHasMatch=true;
+        secHtml+=`<div class="chapter"><div class="chapter-header" onclick="this.querySelector('.arrow').classList.toggle('open');this.nextElementSibling.classList.toggle('open')"><h3>${sec.title}</h3><span class="arrow open">▶</span></div><div class="chapter-body open">${items}</div></div>`;
+      }
+    });
+    if(subjectHasMatch){
+      html+=`<div class="subject-section" id="subj-${subj.subject}"><div class="subject-title" style="border-color:${subj.color};color:${subj.color}">${subj.subject}</div>${secHtml}</div>`;
+    }
+  });
+  if(!html)html='<div class="no-results">未找到匹配的公式</div>';
+  c.innerHTML=html;
+  renderMathInElement(c,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});
+}
+
+function renderSidebar(){
+  const sb=document.getElementById('sidebar');
+  let h='';
+  DATA.forEach(s=>{
+    h+='<div class="toc-subject">'+s.subject+'</div>';
+    s.sections.forEach(sec=>{h+='<a href="#subj-'+s.subject+'" onclick="setSubject(\''+s.subject+'\')">'+sec.title+'</a>';});
+  });
+  sb.innerHTML=h;
+}
+init();</script>

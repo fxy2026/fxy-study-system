@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f0f1a">
+<link rel="manifest" href="manifest.json">
+<title>FXY Task Agent</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, 'Segoe UI', sans-serif;
+  background: #0f0f1a;
+  color: #e0e0e0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+/* Header */
+.header {
+  padding: 16px 20px;
+  background: #161625;
+  border-bottom: 1px solid #252540;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.header h1 { font-size: 18px; color: #c4b5fd; flex:1; }
+.stats {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.stat-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: #252540;
+  color: #999;
+}
+.stat-badge .count { color: #c4b5fd; font-weight: 600; }
+
+/* Messages */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.msg {
+  max-width: 85%;
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.msg.user {
+  align-self: flex-end;
+  background: #7c3aed;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.msg.bot {
+  align-self: flex-start;
+  background: #1e1e35;
+  border: 1px solid #2a2a4a;
+  border-bottom-left-radius: 4px;
+}
+
+/* Task cards */
+.task-card {
+  background: #1a1a30;
+  border: 1px solid #2a2a4a;
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.task-card .priority {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.task-card .priority.p1 { background: #ef4444; }
+.task-card .priority.p2 { background: #f97316; }
+.task-card .priority.p3 { background: #eab308; }
+.task-card .priority.p4 { background: #22c55e; }
+.task-card .priority.p5 { background: #6b7280; }
+.task-card .info { flex:1; }
+.task-card .title { font-size: 13px; font-weight: 600; color: #e0e0e0; }
+.task-card .meta { font-size: 11px; color: #888; margin-top: 2px; }
+.task-card .project-tag {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 8px;
+  background: #7c3aed22;
+  color: #a78bfa;
+  border: 1px solid #7c3aed44;
+}
+
+/* Examples */
+.examples {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 20px 8px;
+}
+.examples button {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  border: 1px solid #333;
+  background: #1a1a30;
+  color: #aaa;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.examples button:hover { border-color: #7c3aed; color: #c4b5fd; }
+
+/* Input */
+.input-area {
+  padding: 12px 20px;
+  background: #161625;
+  border-top: 1px solid #252540;
+  display: flex;
+  gap: 10px;
+}
+.input-area input {
+  font-size: 16px !important;
+  flex:1;
+  padding: 12px 16px;
+  border-radius: 24px;
+  border: 1px solid #333;
+  background: #1e1e35;
+  color: #e0e0e0;
+  font-size: 14px;
+  outline: none;
+}
+.input-area input:focus { border-color: #7c3aed; }
+.input-area button {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s;
+}
+.input-area button:disabled { opacity: 0.4; cursor: not-allowed; }
+.typing { color: #888; font-size: 13px; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Task Agent</h1>
+  <div class="stats" id="stats"></div>
+</div>
+
+<div class="messages" id="messages">
+  <div class="msg bot">Hi! Tell me what you need to do in natural language, and I'll create tasks in Vikunja for you. For example: "help me schedule review for calculus ch9 this Saturday"</div>
+</div>
+
+<div class="examples">
+  <button onclick="send('周六复习高数ch9重积分，优先级高')">Review calculus</button>
+  <button onclick="send('明天交有机化学作业')">Homework DDL</button>
+  <button onclick="send('本周买一箱水和洗衣液')">Shopping</button>
+  <button onclick="send('寒假学Python和生信基础')">Long-term goal</button>
+</div>
+
+<div class="input-area">
+  <input type="text" id="input" placeholder="Describe your task..." autofocus>
+  <button id="sendBtn" onclick="sendInput()">&#x27A4;</button>
+</div>
+
+<script>
+const API = '/api/task-agent';
+const PROJECTS_API = '/api/task-projects';
+const history = [];
+
+// Load project stats
+async function loadStats() {
+  try {
+    const res = await fetch(PROJECTS_API);
+    const data = await res.json();
+    const el = document.getElementById('stats');
+    el.innerHTML = data.projects.map(p =>
+      `<span class="stat-badge">${p.name} <span class="count">${p.pending}</span></span>`
+    ).join('');
+  } catch(e) {}
+}
+loadStats();
+
+function addMsg(role, html) {
+  const d = document.createElement('div');
+  d.className = `msg ${role}`;
+  d.innerHTML = html;
+  document.getElementById('messages').appendChild(d);
+  d.scrollIntoView({ behavior: 'smooth' });
+  return d;
+}
+
+function renderTasks(tasks) {
+  return tasks.map(t => {
+    const p = t.priority || 3;
+    const due = t.due_date ? new Date(t.due_date).toLocaleDateString('zh-CN') : '';
+    return `<div class="task-card">
+      <div class="priority p${p}"></div>
+      <div class="info">
+        <div class="title">${t.title}</div>
+        <div class="meta">${due ? '📅 ' + due : ''}</div>
+      </div>
+      <span class="project-tag">${t.project}</span>
+    </div>`;
+  }).join('');
+}
+
+async function send(text) {
+  if (!text.trim()) return;
+  document.getElementById('input').value = '';
+  addMsg('user', text);
+  history.push({ role: 'user', content: text });
+
+  const typing = addMsg('bot', '<span class="typing">Thinking...</span>');
+  document.getElementById('sendBtn').disabled = true;
+
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, history: history.slice(-6) })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    let html = data.reply || '';
+    if (data.tasks && data.tasks.length > 0) {
+      html += renderTasks(data.tasks);
+    }
+    typing.innerHTML = html;
+    history.push({ role: 'assistant', content: data.reply });
+    loadStats();
+  } catch(e) {
+    typing.innerHTML = `<span style="color:#f87171">Error: ${e.message}</span>`;
+  }
+  document.getElementById('sendBtn').disabled = false;
+}
+
+function sendInput() {
+  send(document.getElementById('input').value);
+}
+
+document.getElementById('input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendInput(); }
+});
+
+// PWA service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

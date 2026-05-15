@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI 题库 - FXY</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{--bg:#0f0f1a;--card:#1a1a2e;--text:#e0e0e0;--text2:#888;--accent:#4361ee;--accent2:#7c8cf8;--border:#2a2a3e;--green:#2a9d8f;--red:#e76f51;--yellow:#e9c46a}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:16px}
+.container{max-width:800px;margin:0 auto}
+h1{font-size:22px;text-align:center;margin-bottom:4px;background:linear-gradient(135deg,#4361ee,#f72585);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.subtitle{text-align:center;color:var(--text2);margin-bottom:16px;font-size:13px}
+.back{display:inline-block;margin-bottom:12px;color:var(--accent2);text-decoration:none;font-size:13px}
+
+/* Stats */
+.stats{display:flex;gap:8px;margin-bottom:16px;justify-content:center;flex-wrap:wrap}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 16px;text-align:center;min-width:70px}
+.stat b{font-size:20px;display:block}
+.stat span{font-size:11px;color:var(--text2)}
+
+/* Filters */
+.filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;justify-content:center}
+.filter-btn{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text);font-size:13px;cursor:pointer;transition:all .2s}
+.filter-btn:hover{border-color:var(--accent)}
+.filter-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+
+/* Mode toggle */
+.mode-bar{display:flex;gap:10px;margin-bottom:16px;justify-content:center}
+.mode-btn{padding:10px 20px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-size:14px;transition:all .2s}
+.mode-btn.active{background:linear-gradient(135deg,#4361ee,#3a0ca3);border-color:var(--accent);color:#fff}
+
+/* Problem cards */
+.problem{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:12px;transition:all .2s}
+.problem:hover{border-color:rgba(67,97,238,.3)}
+.problem-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px}
+.problem-tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.tag.subject{background:rgba(67,97,238,.15);color:var(--accent2)}
+.tag.difficulty{background:rgba(233,196,106,.15);color:var(--yellow)}
+.tag.type{background:rgba(42,157,143,.15);color:var(--green)}
+.mastery-bar{width:60px;height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden}
+.mastery-fill{height:100%;border-radius:3px;transition:width .3s}
+.question{font-size:15px;line-height:1.7;margin-bottom:10px}
+.solution{font-size:14px;line-height:1.7;color:var(--text2);margin-bottom:10px;overflow:hidden;transition:all .3s}
+.solution.hidden{max-height:0;opacity:0;margin:0}
+.solution.blurred{filter:blur(6px);cursor:pointer;max-height:200px}
+.insight{font-size:13px;padding:8px 12px;background:rgba(67,97,238,.06);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;margin-bottom:10px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.act-btn{padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;cursor:pointer;transition:all .2s}
+.act-btn:hover{border-color:var(--accent);background:rgba(67,97,238,.08)}
+.act-btn.green{border-color:var(--green);color:var(--green)}
+.act-btn.yellow{border-color:var(--yellow);color:var(--yellow)}
+.act-btn.red{border-color:var(--red);color:var(--red)}
+.keywords{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.kw{padding:2px 6px;background:rgba(255,255,255,.04);border-radius:4px;font-size:11px;color:var(--text2)}
+#empty{text-align:center;padding:60px 20px;color:var(--text2)}
+#loading{text-align:center;padding:40px;color:var(--text2)}
+
+/* Review mode */
+.review-counter{text-align:center;margin-bottom:16px;font-size:14px;color:var(--text2)}
+.review-progress{width:100%;height:4px;background:rgba(255,255,255,.06);border-radius:2px;margin-bottom:16px}
+.review-progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
+
+@media(max-width:600px){
+  .stats{gap:6px}
+  .stat{padding:8px 10px;min-width:60px}
+  .stat b{font-size:16px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<a href="index.html" class="back">&larr; 返回工具箱</a>
+<h1>📚 AI 题库</h1>
+<p class="subtitle">从 Gemini 对话自动提取 · 图片 OCR 识别题目 · 智能复习</p>
+
+<div class="stats" id="stats"></div>
+
+<div class="mode-bar">
+<button class="mode-btn active" onclick="setMode('browse')">浏览模式</button>
+<button class="mode-btn" onclick="setMode('review')">复习模式</button>
+</div>
+
+<div class="filters" id="filters"></div>
+
+<div id="review-header" style="display:none">
+<div class="review-counter" id="review-counter"></div>
+<div class="review-progress"><div class="review-progress-fill" id="review-progress"></div></div>
+</div>
+
+<div id="loading">加载中...</div>
+<div id="empty" style="display:none">暂无题目。保存 Gemini 对话后自动提取，或运行批量扫描。</div>
+<div id="list"></div>
+</div>
+
+<script>
+const API = '/api/problems';
+let allProblems = [];
+let currentFilter = 'all';
+let currentMode = 'browse';
+let reviewQueue = [];
+let reviewIdx = 0;
+
+async function loadProblems() {
+  try {
+    const resp = await fetch(API);
+    const data = await resp.json();
+    allProblems = data.problems || [];
+    renderStats(data.stats || {});
+    renderFilters();
+    renderList();
+  } catch(e) {
+    document.getElementById('loading').textContent = 'Failed: ' + e.message;
+  }
+}
+
+function renderStats(stats) {
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><b>${stats.total||0}</b><span>总题数</span></div>
+    <div class="stat"><b style="color:var(--red)">${stats.unreviewed||0}</b><span>待复习</span></div>
+    <div class="stat"><b style="color:var(--yellow)">${stats.reviewing||0}</b><span>复习中</span></div>
+    <div class="stat"><b style="color:var(--green)">${stats.mastered||0}</b><span>已掌握</span></div>`;
+}
+
+function renderFilters() {
+  const subjects = [...new Set(allProblems.map(p => p.subject))];
+  let html = '<button class="filter-btn active" onclick="filterBy(\'all\',this)">全部</button>';
+  subjects.forEach(s => {
+    const count = allProblems.filter(p => p.subject === s).length;
+    html += `<button class="filter-btn" onclick="filterBy('${s}',this)">${s} (${count})</button>`;
+  });
+  document.getElementById('filters').innerHTML = html;
+}
+
+function filterBy(subject, btn) {
+  currentFilter = subject;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderList();
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.mode-btn')[mode === 'browse' ? 0 : 1].classList.add('active');
+  document.getElementById('review-header').style.display = mode === 'review' ? 'block' : 'none';
+
+  if (mode === 'review') {
+    const filtered = getFiltered().filter(p => p.mastery < 80);
+    reviewQueue = filtered.sort(() => Math.random() - 0.5);
+    reviewIdx = 0;
+    renderReview();
+  } else {
+    renderList();
+  }
+}
+
+function getFiltered() {
+  if (currentFilter === 'all') return allProblems;
+  return allProblems.filter(p => p.subject === currentFilter);
+}
+
+function renderList() {
+  document.getElementById('loading').style.display = 'none';
+  const filtered = getFiltered();
+  if (filtered.length === 0) {
+    document.getElementById('empty').style.display = 'block';
+    document.getElementById('list').innerHTML = '';
+    return;
+  }
+  document.getElementById('empty').style.display = 'none';
+
+  const html = filtered.map(p => renderCard(p, false)).join('');
+  document.getElementById('list').innerHTML = html;
+  renderMath();
+}
+
+function renderReview() {
+  if (reviewQueue.length === 0) {
+    document.getElementById('list').innerHTML = '<div id="empty" style="display:block">没有待复习的题目了！</div>';
+    return;
+  }
+  const p = reviewQueue[reviewIdx];
+  document.getElementById('review-counter').textContent = `${reviewIdx + 1} / ${reviewQueue.length}`;
+  document.getElementById('review-progress').style.width = ((reviewIdx + 1) / reviewQueue.length * 100) + '%';
+  document.getElementById('list').innerHTML = renderCard(p, true);
+  renderMath();
+}
+
+function renderCard(p, reviewMode) {
+  const mColor = p.mastery >= 80 ? 'var(--green)' : p.mastery > 0 ? 'var(--yellow)' : 'var(--red)';
+  const diffColor = {easy:'var(--green)',medium:'var(--yellow)',hard:'var(--red)'}[p.difficulty] || 'var(--text2)';
+
+  return `<div class="problem">
+    <div class="problem-header">
+      <div class="problem-tags">
+        <span class="tag subject">${p.subject}</span>
+        <span class="tag difficulty" style="color:${diffColor}">${p.difficulty}</span>
+        <span class="tag type">${p.type || ''}</span>
+      </div>
+      <div class="mastery-bar"><div class="mastery-fill" style="width:${p.mastery}%;background:${mColor}"></div></div>
+    </div>
+    <div class="question">${p.question}</div>
+    <div class="solution ${reviewMode ? 'blurred' : 'hidden'}" id="sol-${p.id}" onclick="this.classList.remove('blurred')">${p.solution.replace(/\n/g,'<br>')}</div>
+    ${p.key_insight ? `<div class="insight" style="${reviewMode ? 'display:none' : ''}">${p.key_insight}</div>` : ''}
+    <div class="actions">
+      ${reviewMode ? '' : `<button class="act-btn" onclick="toggleSolution('${p.id}')">查看解答</button>`}
+      <button class="act-btn green" onclick="markMastery('${p.id}',100)">✅ 掌握</button>
+      <button class="act-btn yellow" onclick="markMastery('${p.id}',40)">🔄 需巩固</button>
+      <button class="act-btn red" onclick="markMastery('${p.id}',0)">❌ 不会</button>
+    </div>
+    ${p.keywords && p.keywords.length ? '<div class="keywords">' + p.keywords.map(k=>'<span class="kw">'+k+'</span>').join('') + '</div>' : ''}
+  </div>`;
+}
+
+function toggleSolution(id) {
+  const el = document.getElementById('sol-' + id);
+  if (el) el.classList.toggle('hidden');
+}
+
+async function markMastery(id, mastery) {
+  try {
+    await fetch(API + '/review', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id, mastery})
+    });
+    const p = allProblems.find(x => x.id === id);
+    if (p) { p.mastery = mastery; p.review_count = (p.review_count||0) + 1; }
+
+    if (currentMode === 'review') {
+      reviewIdx++;
+      if (reviewIdx >= reviewQueue.length) {
+        document.getElementById('list').innerHTML = '<div style="text-align:center;padding:40px;color:var(--green);font-size:18px">全部复习完成!</div>';
+        document.getElementById('review-counter').textContent = '完成!';
+        document.getElementById('review-progress').style.width = '100%';
+      } else {
+        renderReview();
+      }
+    } else {
+      renderList();
+    }
+    // Refresh stats
+    const resp = await fetch(API);
+    const data = await resp.json();
+    renderStats(data.stats || {});
+  } catch(e) {}
+}
+
+function renderMath() {
+  if (window.renderMathInElement) {
+    document.querySelectorAll('.question,.solution,.insight').forEach(el => {
+      renderMathInElement(el, {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false},
+        ],
+        throwOnError: false
+      });
+    });
+  }
+}
+
+loadProblems();
+</script>
+</body>
+</html>

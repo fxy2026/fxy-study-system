@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>弱点分析 - FXY</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{--bg:#0f0f1a;--card:#1a1a2e;--text:#e0e0e0;--accent:#4361ee;--accent2:#7c8cf8;--border:#2a2a3e}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
+.container{max-width:800px;margin:0 auto}
+h1{font-size:24px;text-align:center;margin-bottom:8px;background:linear-gradient(135deg,#4361ee,#f72585);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.subtitle{text-align:center;color:#888;margin-bottom:24px;font-size:14px}
+.select-row{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;justify-content:center}
+.subj-btn{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 20px;color:var(--text);font-size:15px;cursor:pointer;transition:all .2s}
+.subj-btn:hover{border-color:var(--accent);transform:translateY(-2px)}
+.subj-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.stats-row{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;flex:1;min-width:100px;text-align:center}
+.stat-num{font-size:24px;font-weight:800;color:var(--accent2)}
+.stat-label{font-size:12px;color:#888;margin-top:4px}
+#loading{display:none;text-align:center;padding:60px 20px;color:#888}
+#loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top:3px solid var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+#result{display:none}
+#analysis{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;line-height:1.8;font-size:14px}
+#analysis h3{color:var(--accent2);margin:20px 0 10px;font-size:18px}
+#analysis h3:first-child{margin-top:0}
+#analysis table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+#analysis th,#analysis td{padding:8px 10px;border:1px solid var(--border);text-align:left}
+#analysis th{background:rgba(67,97,238,.1)}
+#analysis blockquote{background:rgba(67,97,238,.05);border-left:3px solid var(--accent);padding:12px 16px;margin:12px 0;border-radius:0 8px 8px 0}
+#analysis details{background:rgba(42,157,143,.05);border:1px solid rgba(42,157,143,.2);border-radius:8px;padding:12px;margin:8px 0}
+#analysis details summary{cursor:pointer;font-weight:600;color:#2a9d8f}
+#analysis ul,#analysis ol{padding-left:20px;margin:8px 0}
+#analysis li{margin:4px 0}
+#analysis code{background:rgba(255,255,255,.05);padding:2px 6px;border-radius:4px;font-size:13px}
+.back-link{display:inline-block;margin-bottom:16px;color:var(--accent2);text-decoration:none;font-size:14px}
+.back-link:hover{text-decoration:underline}
+#error{display:none;text-align:center;padding:40px;color:#e53e3e}
+#plan-btn{display:none;margin:16px auto;padding:14px 28px;background:linear-gradient(135deg,#2a9d8f,#264653);color:#fff;border:none;border-radius:12px;font-size:15px;cursor:pointer;transition:all .2s}
+#plan-btn:hover{transform:scale(1.03);box-shadow:0 6px 24px rgba(42,157,143,.3)}
+#plan-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+#plan-result{display:none;margin-top:12px;padding:16px;background:rgba(42,157,143,.08);border:1px solid rgba(42,157,143,.2);border-radius:12px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="container">
+<a href="index.html" class="back-link">&larr; 返回工具箱</a>
+<h1>🎯 弱点分析</h1>
+<p class="subtitle">选择科目，AI 分析你的知识盲区和复习优先级</p>
+
+<div class="select-row" id="subjects"></div>
+
+<div id="loading">
+<div class="spinner"></div>
+<p>正在分析你的学习数据...</p>
+<p style="font-size:12px;margin-top:8px">AI 笔记 + 闪卡 + 间隔重复 + 薄弱点 + 任务完成率</p>
+</div>
+
+<div id="error"></div>
+
+<div id="result">
+<div class="stats-row" id="stats-row"></div>
+<div id="analysis"></div>
+<div style="text-align:center;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+<button id="plan-btn" onclick="generatePlan()">📋 一键生成强化计划</button>
+<button id="coverage-btn" onclick="checkCoverage()" style="display:none;padding:14px 28px;background:linear-gradient(135deg,#4361ee,#3a0ca3);color:#fff;border:none;border-radius:12px;font-size:15px;cursor:pointer;transition:all .2s">📊 知识覆盖度检查</button>
+</div>
+<div id="plan-result"></div>
+</div>
+</div>
+
+<script>
+const API = '/api/weakness';
+const SUBJECTS = [
+  {key: '高数', label: '高数II', icon: '📐'},
+  {key: '有机', label: '有机化学', icon: '🧪'},
+  {key: '概统', label: '概率统计', icon: '📊'},
+  {key: '大物', label: '大学物理', icon: '⚛️'},
+  {key: '分化', label: '分析化学', icon: '🔬'},
+  {key: '普生', label: '普通生物学', icon: '🧬'},
+  {key: 'AI基础', label: 'AI基础', icon: '🤖'},
+  {key: '习思想', label: '习思想', icon: '📕'},
+];
+
+const subjectsEl = document.getElementById('subjects');
+SUBJECTS.forEach(s => {
+  const btn = document.createElement('button');
+  btn.className = 'subj-btn';
+  btn.textContent = s.icon + ' ' + s.label;
+  btn.onclick = () => analyze(s.key, btn);
+  subjectsEl.appendChild(btn);
+});
+
+let activeBtn = null;
+
+async function analyze(subject, btn) {
+  if (activeBtn) activeBtn.classList.remove('active');
+  btn.classList.add('active');
+  activeBtn = btn;
+
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('result').style.display = 'none';
+  document.getElementById('error').style.display = 'none';
+
+  try {
+    const resp = await fetch(API, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({subject})
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    // Stats
+    const stats = data.stats || {};
+    const statsEl = document.getElementById('stats-row');
+    statsEl.innerHTML = [
+      {n: stats.ai_notes || 0, l: 'AI 笔记'},
+      {n: stats.flashcards || 0, l: '闪卡'},
+      {n: stats.spaced_items || 0, l: '间隔重复'},
+      {n: stats.weaknesses || 0, l: '薄弱点'},
+      {n: (stats.tasks_ontime_rate || 0) + '%', l: '按时完成率'},
+    ].map(s => `<div class="stat-card"><div class="stat-num">${s.n}</div><div class="stat-label">${s.l}</div></div>`).join('');
+
+    // Analysis markdown → HTML
+    const analysisEl = document.getElementById('analysis');
+    analysisEl.innerHTML = renderMarkdown(data.analysis || '暂无数据');
+
+    // Render LaTeX
+    if (window.renderMathInElement) {
+      renderMathInElement(analysisEl, {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false},
+        ],
+        throwOnError: false
+      });
+    }
+
+    // Convert Obsidian callouts
+    analysisEl.querySelectorAll('blockquote').forEach(bq => {
+      const text = bq.innerHTML;
+      if (text.includes('[!tip]')) {
+        const m = text.match(/\[!tip\]-?\s*(.*)/);
+        if (m) {
+          const details = document.createElement('details');
+          const summary = document.createElement('summary');
+          summary.textContent = m[1] || '解答';
+          details.appendChild(summary);
+          const content = document.createElement('div');
+          content.innerHTML = text.replace(/.*\[!tip\]-?\s*.*\n?/, '');
+          details.appendChild(content);
+          bq.replaceWith(details);
+        }
+      }
+    });
+
+    document.getElementById('result').style.display = 'block';
+    document.getElementById('plan-btn').style.display = 'inline-block';
+    document.getElementById('coverage-btn').style.display = 'inline-block';
+    document.getElementById('plan-result').style.display = 'none';
+    // Store for plan generation
+    window._lastAnalysis = { subject: data.subject, analysis: data.analysis };
+  } catch(e) {
+    document.getElementById('error').style.display = 'block';
+    document.getElementById('error').textContent = '分析失败: ' + e.message;
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+  }
+}
+
+async function generatePlan() {
+  const btn = document.getElementById('plan-btn');
+  const resultEl = document.getElementById('plan-result');
+  if (!window._lastAnalysis) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 正在生成...';
+  resultEl.style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/weakness-plan', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(window._lastAnalysis)
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    let html = `<p style="color:#2a9d8f;font-weight:700">✅ 已创建 ${data.count} 个强化任务到 Vikunja</p><ul>`;
+    (data.created || []).forEach(t => {
+      html += `<li><strong>${t.title}</strong> — 截止 ${t.due}</li>`;
+    });
+    html += '</ul>';
+    resultEl.innerHTML = html;
+    resultEl.style.display = 'block';
+    btn.textContent = '✅ 已生成';
+  } catch(e) {
+    resultEl.innerHTML = `<p style="color:#e53e3e">生成失败: ${e.message}</p>`;
+    resultEl.style.display = 'block';
+    btn.textContent = '📋 重新生成';
+    btn.disabled = false;
+  }
+}
+
+async function checkCoverage() {
+  if (!window._lastAnalysis) return;
+  const btn = document.getElementById('coverage-btn');
+  const resultEl = document.getElementById('plan-result');
+  btn.disabled = true; btn.textContent = '⏳ 检查中...';
+  resultEl.style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/coverage', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({subject: window._lastAnalysis.subject})
+    });
+    const data = await resp.json();
+    if (data.error === 'no_chapters') {
+      resultEl.innerHTML = '<p>该科目暂无章节数据（缺少期末复习.md）</p>';
+      resultEl.style.display = 'block'; btn.textContent = '📊 知识覆盖度检查'; btn.disabled = false;
+      return;
+    }
+
+    const pct = data.coverage_pct || 0;
+    const color = pct >= 80 ? '#2a9d8f' : pct >= 50 ? '#e9c46a' : '#e76f51';
+    let html = `<p style="font-size:18px;font-weight:700">📊 覆盖度: <span style="color:${color}">${pct}%</span> (${data.total_chapters || '?'}个章节)</p>`;
+
+    if (data.chapters) {
+      html += '<div style="margin:12px 0">';
+      data.chapters.forEach(ch => {
+        const icon = ch.status === 'covered' ? '✅' : ch.status === 'partial' ? '🟡' : '🔴';
+        html += `<div style="padding:4px 0">${icon} <strong>${ch.name}</strong> <span style="color:#888;font-size:12px">${ch.evidence || ''}</span></div>`;
+      });
+      html += '</div>';
+    }
+
+    if (data.uncovered_warning && data.uncovered_warning.length > 0) {
+      html += '<p style="color:#e76f51;font-weight:700;margin-top:12px">⚠️ 未覆盖的关键章节：</p><ul>';
+      data.uncovered_warning.forEach(w => { html += `<li>${w}</li>`; });
+      html += '</ul>';
+    }
+
+    resultEl.innerHTML = html;
+    resultEl.style.display = 'block';
+    btn.textContent = '📊 重新检查';
+    btn.disabled = false;
+  } catch(e) {
+    resultEl.innerHTML = `<p style="color:#e53e3e">检查失败: ${e.message}</p>`;
+    resultEl.style.display = 'block';
+    btn.textContent = '📊 重新检查'; btn.disabled = false;
+  }
+}
+
+function renderMarkdown(md) {
+  return md
+    .replace(/^### (.*)/gm, '<h3>$1</h3>')
+    .replace(/^## (.*)/gm, '<h2>$1</h2>')
+    .replace(/^\|(.+)\|$/gm, (m) => {
+      const cells = m.split('|').filter(c => c.trim());
+      if (cells.every(c => c.trim().match(/^-+$/))) return '</thead><tbody>';
+      const tag = m.includes('---') ? 'skip' : 'td';
+      if (tag === 'skip') return '';
+      return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
+    })
+    .replace(/<tr>(.+?)<\/tr>\s*<\/thead>/g, (m, inner) => '<table><thead><tr>' + inner.replace(/<td>/g,'<th>').replace(/<\/td>/g,'</th>') + '</tr></thead><tbody>')
+    .replace(/<\/tbody>(?![\s\S]*<\/table>)/g, '</tbody></table>')
+    .replace(/^> \[!tip\]-?\s*(.*)\n((?:>.*\n?)*)/gm, (m, title, body) => {
+      const clean = body.replace(/^>\s?/gm, '');
+      return `<details><summary>${title || '解答'}</summary><div>${renderInline(clean)}</div></details>`;
+    })
+    .replace(/^> (.*)/gm, '<blockquote>$1</blockquote>')
+    .replace(/^- (.*)/gm, '<li>$1</li>')
+    .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n{2,}/g, '<br><br>')
+    .replace(/\n/g, '<br>');
+}
+function renderInline(t) {
+  return t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+}
+</script>
+</body>
+</html>

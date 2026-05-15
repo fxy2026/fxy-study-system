@@ -686,6 +686,19 @@ tags: [早报]
             md += fmt_task(t) + "\n"
         md += "\n"
 
+    # Usage tips (rotate daily)
+    tips = [
+        '💡 在 Memos 发 `#学了 高数 45min` 记录学习时间，早晚报会展示统计',
+        '💡 在 Memos 发 `#查 格林公式` 可以 3 秒检索笔记，不用开电脑',
+        '💡 试试 [模拟考试](https://kb.xpy.me/apps/exam.html)，看看你现在能考多少分',
+        '💡 打开 [弱点分析](https://kb.xpy.me/apps/weakness.html) 点"覆盖度检查"，看哪些章节没复习过',
+        '💡 每科的《期末冲刺精华》已生成，在课程文件夹里，考前翻这一份就够',
+        '💡 试试 [AI 题库](https://kb.xpy.me/apps/problems.html) 的复习模式，从 Gemini 对话中自动提取的题目',
+        '💡 打开 [学习报告](https://kb.xpy.me/apps/report.html) 看看各科数据可视化',
+    ]
+    tip_idx = (today - datetime.date(2026, 1, 1)).days % len(tips)
+    md += f"\n---\n\n{tips[tip_idx]}\n\n"
+
     # Bark
     title = f'☀️ 早报 | {wd} | 距期末{days_left}天'
     parts = []

@@ -329,7 +329,18 @@ def fetch_weather():
         log(f'Weather: {weather["temp"]}°C {desc}')
         return weather
     except Exception as e:
-        log(f'Weather failed: {e}')
+        log(f'Weather failed (wttr.in): {e}')
+        # Fallback: try simple format
+        try:
+            r2 = requests.get('https://wttr.in/Shanghai?format=%t+%C', headers={'User-Agent': 'curl/7.0'}, timeout=8)
+            if r2.text and r2.text.strip():
+                parts = r2.text.strip().split(' ', 1)
+                temp = parts[0].replace('+','').replace('°C','')
+                desc = parts[1] if len(parts) > 1 else ''
+                log(f'Weather fallback: {temp}°C {desc}')
+                return {'temp': temp, 'feels': temp, 'desc': desc, 'icon': '🌡️', 'humidity': '', 'forecast': []}
+        except:
+            pass
         return None
 
 # ========== RSS Feeds ==========

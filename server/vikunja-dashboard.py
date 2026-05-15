@@ -797,11 +797,43 @@ tags: [导航]
 
 # ========== Evening Report ==========
 
+def auto_log_video_study(today):
+    """Auto-write video watching time into study-log"""
+    today_str = today.isoformat()
+    vdata = load_video_courses()
+    logs = load_study_log()
+
+    # Skip if already logged video for today
+    if any(e.get('date') == today_str and str(e.get('note', '')).startswith('video:') for e in logs):
+        return
+
+    total = 0
+    for subj, course in vdata.get('courses', {}).items():
+        for ep, info in course.get('episodes', {}).items():
+            if info.get('date') == today_str:
+                pct = info.get('progress', 0)
+                mins = int(60 * pct / 100)
+                if mins > 0:
+                    logs.append({
+                        'date': today_str, 'subject': subj, 'duration': mins,
+                        'note': f'video:P{ep}', 'memo_id': 'auto-video',
+                        'timestamp': datetime.datetime.now(TZ).isoformat()
+                    })
+                    total += mins
+
+    if total > 0:
+        save_study_log(logs)
+        log(f'Auto-logged {total}min video study time')
+
+
 def evening_report(now, today):
     wd = WEEKDAY_NAMES[today.weekday()]
     days_left = (EXAM_DATE - today).days
     tomorrow = today + datetime.timedelta(days=1)
     tmr_wd = WEEKDAY_NAMES[tomorrow.weekday()]
+
+    # Auto-log video watching time before generating report
+    auto_log_video_study(today)
 
     all_tasks = fetch_all_tasks()
     _, overdue, due_today, due_tomorrow, due_this_week, due_this_month = categorize(all_tasks, today)
@@ -1100,6 +1132,19 @@ def ai_summary(now, today):
         user_content += f"【课堂笔记】（用户课间随手记录）\n{memos_content}\n\n"
     if ai_notes_block:
         user_content += f"【AI学习笔记】（Gemini对话，较详细）\n{ai_notes_block}\n"
+
+    # Add video watching info
+    vdata = load_video_courses()
+    video_info = ""
+    for subj, course in vdata.get('courses', {}).items():
+        today_eps = []
+        for ep, info in course.get('episodes', {}).items():
+            if info.get('date') == today_str:
+                today_eps.append(f"P{ep}({info.get('progress',0)}%)")
+        if today_eps:
+            video_info += f"- {subj}网课: 看了 {', '.join(today_eps)}\n"
+    if video_info:
+        user_content += f"【网课学习】（视频课程观看记录）\n{video_info}\n"
 
     style_ref = ""
     if course_style_samples:

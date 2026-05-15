@@ -1712,7 +1712,7 @@ def spaced_repetition(now, today):
     # Scan recent 3 days' 学习回顾 for new unmastered items
     import re as _re
     existing_texts = {item['text'][:30] for item in items}
-    for delta in range(1, 4):
+    for delta in range(0, 4):  # Include today
         scan_day = today - datetime.timedelta(days=delta)
         review_path = os.path.join(NOTE_DIR, str(scan_day), '学习回顾.md')
         if not os.path.exists(review_path):
@@ -1726,7 +1726,7 @@ def spaced_repetition(now, today):
                 continue
             if in_table and line.startswith('###'):
                 break
-            if in_table and line.startswith('|') and '---' not in line and '知识点' not in line:
+            if in_table and line.startswith('|') and '知识点' not in line and not all(c in '-|: ' for c in line):
                 cells = [c.strip() for c in line.split('|') if c.strip()]
                 if len(cells) >= 3:
                     text = f"{cells[0]}（{cells[1]}）"
@@ -1784,7 +1784,7 @@ def proactive_review_generate(now, today):
 
     # 1. Gather knowledge points from last 3 days' 学习回顾 + AI notes
     knowledge_points = []
-    for delta in range(1, 4):
+    for delta in range(0, 4):  # Include today
         day = today - datetime.timedelta(days=delta)
         day_str = day.isoformat()
 
